@@ -3,20 +3,39 @@ import { embedText } from "@/lib/ai/oars";
 import { chunkMarkdown, extractFrontmatter } from "@/lib/vault/chunk";
 import { ensureCollection, upsertPoints } from "@/lib/qdrant/client";
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
 
 const DEFAULT_VAULT_ROOT = "/shared/obsidian_live_vault";
 
-type SyncSummary = {
+export type SyncSummary = {
   scannedFiles: number;
   syncedFiles: number;
   embeddedChunks: number;
   skippedFiles: number;
 };
 
-export async function runVaultSync(userId: string): Promise<SyncSummary> {
-  const root = process.env.OBSIDIAN_VAULT_PATH?.trim() || DEFAULT_VAULT_ROOT;
+export type VaultDiagnostics = {
+  vaultPath: string;
+  pathExists: boolean;
+  isReadable: boolean;
+  totalMarkdownFiles: number;
+};
+
+export async function getVaultDiagnostics(root = resolveVaultRoot()): Promise<VaultDiagnostics> {
+  const pathExists = await checkPathExists(root);
+  const isReadable = pathExists ? await checkPathReadable(root) : false;
+  const totalMarkdownFiles = isReadable ? await countMarkdownFiles(root) : 0;
+
+  return {
+    vaultPath: root,
+    pathExists,
+    isReadable,
+    totalMarkdownFiles,
+  };
+}
+
+export async function runVaultSync(userId: string, root = resolveVaultRoot()): Promise<SyncSummary> {
   const allFiles = await listMarkdownFiles(root);
   const admin = createAdminClient();
 
@@ -96,13 +115,42 @@ export async function runVaultSync(userId: string): Promise<SyncSummary> {
   };
 }
 
+export function resolveVaultRoot() {
+  return process.env.OBSIDIAN_VAULT_PATH?.trim() || DEFAULT_VAULT_ROOT;
+}
+
+export async function checkPathExists(root: string): Promise<boolean> {
+  try {
+    await fs.stat(root);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function checkPathReadable(root: string): Promise<boolean> {
+  try {
+    await fs.access(root, fsConstants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function countMarkdownFiles(root: string): Promise<number> {
+  return (await listMarkdownFiles(root)).length;
+}
+
 async function listMarkdownFiles(root: string): Promise<string[]> {
   const results: string[] = [];
 
   async function walk(current: string) {
     let entries: Array<{ name: string; isDirectory: () => boolean }> = [];
     try {
-      entries = await fs.readdir(current, { withFileTypes: true }) as Array<{ name: string; isDirectory: () => boolean }>;
+      entries = (await fs.readdir(current, { withFileTypes: true })) as Array<{
+        name: string;
+        isDirectory: () => boolean;
+      }>;
     } catch {
       return;
     }
@@ -111,7 +159,7 @@ async function listMarkdownFiles(root: string): Promise<string[]> {
       const fullPath = path.join(current, entry.name);
       if (entry.isDirectory()) {
         await walk(fullPath);
-      } else if (entry.name.toLowerCase().endsWith('.md')) {
+      } else if (entry.name.toLowerCase().endsWith(".md")) {
         results.push(fullPath);
       }
     }

@@ -11,6 +11,7 @@ import { indexItemsInVectorStore } from "@/lib/items/embeddings";
 
 const ALLOWED_STATUSES = new Set(["active", "completed", "archived"]);
 const ALLOWED_TYPES = new Set(["note", "todo", "link"]);
+const TRASH_RETENTION_DAYS = 30;
 
 function splitInboxChunks(raw: string): string[] {
   const blankLineParts = raw.split(/\n\s*\n/).map((c) => c.trim()).filter(Boolean);
@@ -27,6 +28,16 @@ function splitInboxChunks(raw: string): string[] {
   }
 
   return [raw.trim()];
+}
+
+function asMetadata(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function withoutTrashFlags(metadata: Record<string, unknown>) {
+  const { deleted_at: _deletedAt, dismissed: _dismissed, ...rest } = metadata;
+  return rest;
 }
 
 export async function captureInboxItem(formData: FormData) {
@@ -62,7 +73,9 @@ export async function captureInboxItem(formData: FormData) {
 
   if (error) throw new Error(`Failed to save inbox items: ${error.message}`);
 
-  await indexItemsInVectorStore((data ?? []) as Array<{ id: string; user_id: string; title: string | null; content: string; type: string; status: string }>);
+  await indexItemsInVectorStore(
+    (data ?? []) as Array<{ id: string; user_id: string; title: string | null; content: string; type: string; status: string }>,
+  );
 
   revalidatePath("/app");
   revalidatePath("/widget");
@@ -81,19 +94,28 @@ export async function updateItemStatus(formData: FormData) {
 
   const { data: existing, error: existingError } = await supabase
     .from("items")
-    .select("status")
+    .select("status, metadata")
     .eq("id", itemId)
     .eq("user_id", userId)
     .single();
 
   if (existingError) throw new Error(`Failed to load item for status update: ${existingError.message}`);
 
+  const metadata = asMetadata(existing?.metadata);
+
   const payload: Record<string, unknown> = {
     status,
     completed_at: status === "completed" ? new Date().toISOString() : null,
   };
 
-  const { error } = await supabase.from("items").update(payload).eq("id", itemId).eq("user_id", userId);
+  if (status === "active") payload.metadata = withoutTrashFlags(metadata);
+
+  const { error } = await supabase
+    .from("items")
+    .update(payload)
+    .eq("id", itemId)
+    .eq("user_id", userId);
+
   if (error) throw new Error(`Failed to update item status: ${error.message}`);
 
   const fromStatus = String(existing.status ?? "active");
@@ -122,6 +144,15 @@ export async function moveItemToLane(input: { itemId: string; toLane: LaneKey; f
   const supabase = createAdminClient();
   const userId = await resolveSessionUserId();
 
+  const { data: existing } = await supabase
+    .from("items")
+    .select("metadata")
+    .eq("id", itemId)
+    .eq("user_id", userId)
+    .single();
+
+  const metadata = withoutTrashFlags(asMetadata(existing?.metadata));
+
   const nextPriority = laneToPriority(toLane);
 
   const { error } = await supabase
@@ -129,6 +160,7 @@ export async function moveItemToLane(input: { itemId: string; toLane: LaneKey; f
     .update({
       status: "active",
       priority_score: nextPriority,
+      metadata,
     })
     .eq("id", itemId)
     .eq("user_id", userId);
@@ -165,7 +197,7 @@ export async function updateItemDetails(formData: FormData) {
 
   const { data: existing } = await supabase
     .from("items")
-    .select("status")
+    .select("status, metadata")
     .eq("id", itemId)
     .eq("user_id", userId)
     .single();
@@ -176,6 +208,7 @@ export async function updateItemDetails(formData: FormData) {
     type,
     priority_score: laneToPriority(lane),
     status: "active",
+    metadata: withoutTrashFlags(asMetadata(existing?.metadata)),
   };
 
   if (markReviewed) payload.needs_review = false;
@@ -198,7 +231,9 @@ export async function updateItemDetails(formData: FormData) {
     to_status: lane,
   });
 
-  await indexItemsInVectorStore([data as { id: string; user_id: string; title: string | null; content: string; type: string; status: string }]);
+  await indexItemsInVectorStore([
+    data as { id: string; user_id: string; title: string | null; content: string; type: string; status: string },
+  ]);
 
   revalidatePath("/app");
   revalidatePath("/widget");
@@ -214,28 +249,92 @@ export async function dismissItem(formData: FormData) {
 
   const { data: existing } = await supabase
     .from("items")
-    .select("metadata")
+    .select("status, metadata")
     .eq("id", itemId)
     .eq("user_id", userId)
     .single();
 
-  const metadata = ((existing?.metadata ?? {}) as Record<string, unknown>);
+  const metadata = asMetadata(existing?.metadata);
 
   const { error } = await supabase
     .from("items")
-    .update({ status: "archived", metadata: { ...metadata, dismissed: true } })
+    .update({
+      status: "archived",
+      metadata: {
+        ...metadata,
+        dismissed: true,
+        deleted_at: new Date().toISOString(),
+      },
+    })
     .eq("id", itemId)
     .eq("user_id", userId);
 
-  if (error) throw new Error(`Failed to dismiss item: ${error.message}`);
+  if (error) throw new Error(`Failed to move item to trash: ${error.message}`);
 
   await supabase.from("interactions").insert({
     user_id: userId,
     item_id: itemId,
     action: "deleted",
-    from_status: "active",
-    to_status: "dismissed",
+    from_status: String(existing?.status ?? "active"),
+    to_status: "trash",
   });
+
+  revalidatePath("/app");
+  revalidatePath("/widget");
+}
+
+export async function restoreItemFromTrash(formData: FormData) {
+  await requireHardcodedSession();
+  const itemId = String(formData.get("itemId") ?? "").trim();
+  if (!itemId) return;
+
+  const supabase = createAdminClient();
+  const userId = await resolveSessionUserId();
+
+  const { data: existing, error: loadError } = await supabase
+    .from("items")
+    .select("status, metadata")
+    .eq("id", itemId)
+    .eq("user_id", userId)
+    .single();
+
+  if (loadError) throw new Error(`Failed to load trash item: ${loadError.message}`);
+
+  const metadata = withoutTrashFlags(asMetadata(existing?.metadata));
+
+  const { error } = await supabase
+    .from("items")
+    .update({
+      status: "active",
+      metadata,
+    })
+    .eq("id", itemId)
+    .eq("user_id", userId);
+
+  if (error) throw new Error(`Failed to restore item: ${error.message}`);
+
+  await supabase.from("interactions").insert({
+    user_id: userId,
+    item_id: itemId,
+    action: "moved",
+    from_status: "trash",
+    to_status: "active",
+  });
+
+  revalidatePath("/app");
+  revalidatePath("/widget");
+}
+
+export async function permanentlyDeleteItem(formData: FormData) {
+  await requireHardcodedSession();
+  const itemId = String(formData.get("itemId") ?? "").trim();
+  if (!itemId) return;
+
+  const supabase = createAdminClient();
+  const userId = await resolveSessionUserId();
+
+  const { error } = await supabase.from("items").delete().eq("id", itemId).eq("user_id", userId);
+  if (error) throw new Error(`Failed to permanently delete item: ${error.message}`);
 
   revalidatePath("/app");
   revalidatePath("/widget");
@@ -256,21 +355,64 @@ export async function clearCompletedBacklog() {
   if (!completed || completed.length === 0) return;
 
   for (const row of completed) {
-    const metadata = ((row.metadata ?? {}) as Record<string, unknown>);
+    const metadata = asMetadata(row.metadata);
     await supabase
       .from("items")
-      .update({ status: "archived", metadata: { ...metadata, cleared_from_backlog: true } })
+      .update({
+        status: "archived",
+        metadata: {
+          ...metadata,
+          cleared_from_backlog: true,
+          deleted_at: new Date().toISOString(),
+        },
+      })
       .eq("id", row.id)
       .eq("user_id", userId);
 
     await supabase.from("interactions").insert({
       user_id: userId,
       item_id: row.id,
-      action: "moved",
+      action: "deleted",
       from_status: "completed",
-      to_status: "archived",
+      to_status: "trash",
     });
   }
+
+  revalidatePath("/app");
+  revalidatePath("/widget");
+}
+
+export async function purgeExpiredTrash() {
+  await requireHardcodedSession();
+
+  const supabase = createAdminClient();
+  const userId = await resolveSessionUserId();
+
+  const cutoff = new Date(Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: archived } = await supabase
+    .from("items")
+    .select("id,metadata")
+    .eq("user_id", userId)
+    .eq("status", "archived");
+
+  const purgeIds = (archived ?? [])
+    .filter((row) => {
+      const deletedAt = String(asMetadata(row.metadata).deleted_at ?? "").trim();
+      if (!deletedAt) return false;
+      return deletedAt <= cutoff;
+    })
+    .map((row) => row.id);
+
+  if (purgeIds.length === 0) return;
+
+  const { error } = await supabase
+    .from("items")
+    .delete()
+    .eq("user_id", userId)
+    .in("id", purgeIds);
+
+  if (error) throw new Error(`Failed to purge trash: ${error.message}`);
 
   revalidatePath("/app");
   revalidatePath("/widget");
@@ -331,7 +473,9 @@ export async function createSubtaskFromSuggestion(formData: FormData) {
 
   if (error) throw new Error(`Failed to create subtask: ${error.message}`);
 
-  await indexItemsInVectorStore((data ?? []) as Array<{ id: string; user_id: string; title: string | null; content: string; type: string; status: string }>);
+  await indexItemsInVectorStore(
+    (data ?? []) as Array<{ id: string; user_id: string; title: string | null; content: string; type: string; status: string }>,
+  );
 
   revalidatePath("/app");
   revalidatePath("/widget");

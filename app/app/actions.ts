@@ -8,6 +8,7 @@ import { requireHardcodedSession, clearHardcodedSession } from "@/lib/auth/sessi
 import { resolveSessionUserId } from "@/lib/auth/session-user";
 import { laneToPriority, type LaneKey } from "@/lib/items/lane";
 import { indexItemsInVectorStore } from "@/lib/items/embeddings";
+import { mirrorItemToObsidian, removeMirroredFileFromMetadata } from "@/lib/obsidian/mirror";
 
 const ALLOWED_STATUSES = new Set(["active", "completed", "archived"]);
 const ALLOWED_TYPES = new Set(["note", "todo", "link"]);
@@ -69,12 +70,46 @@ export async function captureInboxItem(formData: FormData) {
   const { data, error } = await supabase
     .from("items")
     .insert(rows)
-    .select("id,user_id,title,content,type,status");
+    .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata");
 
   if (error) throw new Error(`Failed to save inbox items: ${error.message}`);
 
+  const inserted = (data ?? []) as Array<{
+    id: string;
+    user_id: string;
+    title: string | null;
+    content: string;
+    type: "todo" | "note" | "link";
+    status: "active" | "completed" | "archived";
+    priority_score: number;
+    confidence_score: number | null;
+    needs_review: boolean;
+    created_at: string;
+    updated_at?: string;
+    metadata?: Record<string, unknown>;
+  }>;
+
+  for (const row of inserted) {
+    const mirrored = await mirrorItemToObsidian(row);
+    if (mirrored) {
+      const metadata = asMetadata(row.metadata);
+      await supabase
+        .from("items")
+        .update({ metadata: { ...metadata, obsidian_path: mirrored.obsidianPath } })
+        .eq("id", row.id)
+        .eq("user_id", userId);
+    }
+  }
+
   await indexItemsInVectorStore(
-    (data ?? []) as Array<{ id: string; user_id: string; title: string | null; content: string; type: string; status: string }>,
+    inserted.map((row) => ({
+      id: row.id,
+      user_id: row.user_id,
+      title: row.title,
+      content: row.content,
+      type: row.type,
+      status: row.status,
+    })),
   );
 
   revalidatePath("/app");
@@ -110,13 +145,40 @@ export async function updateItemStatus(formData: FormData) {
 
   if (status === "active") payload.metadata = withoutTrashFlags(metadata);
 
-  const { error } = await supabase
+  const { data: updatedItem, error } = await supabase
     .from("items")
     .update(payload)
     .eq("id", itemId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata")
+    .single();
 
   if (error) throw new Error(`Failed to update item status: ${error.message}`);
+
+  if (updatedItem && status !== "archived") {
+    const mirrored = await mirrorItemToObsidian(updatedItem as {
+      id: string;
+      user_id: string;
+      title: string | null;
+      content: string;
+      type: "todo" | "note" | "link";
+      status: "active" | "completed" | "archived";
+      priority_score: number;
+      confidence_score: number | null;
+      needs_review: boolean;
+      created_at: string;
+      updated_at?: string;
+      metadata?: Record<string, unknown>;
+    });
+    if (mirrored) {
+      const metadataNext = asMetadata((updatedItem as { metadata?: Record<string, unknown> }).metadata);
+      await supabase
+        .from("items")
+        .update({ metadata: { ...metadataNext, obsidian_path: mirrored.obsidianPath } })
+        .eq("id", itemId)
+        .eq("user_id", userId);
+    }
+  }
 
   const fromStatus = String(existing.status ?? "active");
   const action = status === "completed" ? "completed" : "moved";
@@ -155,7 +217,7 @@ export async function moveItemToLane(input: { itemId: string; toLane: LaneKey; f
 
   const nextPriority = laneToPriority(toLane);
 
-  const { error } = await supabase
+  const { data: movedItem, error } = await supabase
     .from("items")
     .update({
       status: "active",
@@ -163,9 +225,36 @@ export async function moveItemToLane(input: { itemId: string; toLane: LaneKey; f
       metadata,
     })
     .eq("id", itemId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata")
+    .single();
 
   if (error) throw new Error(`Failed to move item: ${error.message}`);
+
+  if (movedItem) {
+    const mirrored = await mirrorItemToObsidian(movedItem as {
+      id: string;
+      user_id: string;
+      title: string | null;
+      content: string;
+      type: "todo" | "note" | "link";
+      status: "active" | "completed" | "archived";
+      priority_score: number;
+      confidence_score: number | null;
+      needs_review: boolean;
+      created_at: string;
+      updated_at?: string;
+      metadata?: Record<string, unknown>;
+    });
+    if (mirrored) {
+      const metadataNext = asMetadata((movedItem as { metadata?: Record<string, unknown> }).metadata);
+      await supabase
+        .from("items")
+        .update({ metadata: { ...metadataNext, obsidian_path: mirrored.obsidianPath } })
+        .eq("id", itemId)
+        .eq("user_id", userId);
+    }
+  }
 
   await supabase.from("interactions").insert({
     user_id: userId,
@@ -218,7 +307,7 @@ export async function updateItemDetails(formData: FormData) {
     .update(payload)
     .eq("id", itemId)
     .eq("user_id", userId)
-    .select("id,user_id,title,content,type,status")
+     .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata")
     .single();
 
   if (error) throw new Error(`Failed to update item details: ${error.message}`);
@@ -231,8 +320,40 @@ export async function updateItemDetails(formData: FormData) {
     to_status: lane,
   });
 
+  const updated = data as {
+    id: string;
+    user_id: string;
+    title: string | null;
+    content: string;
+    type: "todo" | "note" | "link";
+    status: "active" | "completed" | "archived";
+    priority_score: number;
+    confidence_score: number | null;
+    needs_review: boolean;
+    created_at: string;
+    updated_at?: string;
+    metadata?: Record<string, unknown>;
+  };
+
+  const mirrored = await mirrorItemToObsidian(updated);
+  if (mirrored) {
+    const metadataNext = asMetadata(updated.metadata);
+    await supabase
+      .from("items")
+      .update({ metadata: { ...metadataNext, obsidian_path: mirrored.obsidianPath } })
+      .eq("id", itemId)
+      .eq("user_id", userId);
+  }
+
   await indexItemsInVectorStore([
-    data as { id: string; user_id: string; title: string | null; content: string; type: string; status: string },
+    {
+      id: updated.id,
+      user_id: updated.user_id,
+      title: updated.title,
+      content: updated.content,
+      type: updated.type,
+      status: updated.status,
+    },
   ]);
 
   revalidatePath("/app");
@@ -271,6 +392,8 @@ export async function dismissItem(formData: FormData) {
 
   if (error) throw new Error(`Failed to move item to trash: ${error.message}`);
 
+  await removeMirroredFileFromMetadata(metadata);
+
   await supabase.from("interactions").insert({
     user_id: userId,
     item_id: itemId,
@@ -302,16 +425,43 @@ export async function restoreItemFromTrash(formData: FormData) {
 
   const metadata = withoutTrashFlags(asMetadata(existing?.metadata));
 
-  const { error } = await supabase
+  const { data: restoredItem, error } = await supabase
     .from("items")
     .update({
       status: "active",
       metadata,
     })
     .eq("id", itemId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata")
+    .single();
 
   if (error) throw new Error(`Failed to restore item: ${error.message}`);
+
+  if (restoredItem) {
+    const mirrored = await mirrorItemToObsidian(restoredItem as {
+      id: string;
+      user_id: string;
+      title: string | null;
+      content: string;
+      type: "todo" | "note" | "link";
+      status: "active" | "completed" | "archived";
+      priority_score: number;
+      confidence_score: number | null;
+      needs_review: boolean;
+      created_at: string;
+      updated_at?: string;
+      metadata?: Record<string, unknown>;
+    });
+    if (mirrored) {
+      const metadataNext = asMetadata((restoredItem as { metadata?: Record<string, unknown> }).metadata);
+      await supabase
+        .from("items")
+        .update({ metadata: { ...metadataNext, obsidian_path: mirrored.obsidianPath } })
+        .eq("id", itemId)
+        .eq("user_id", userId);
+    }
+  }
 
   await supabase.from("interactions").insert({
     user_id: userId,
@@ -332,6 +482,15 @@ export async function permanentlyDeleteItem(formData: FormData) {
 
   const supabase = createAdminClient();
   const userId = await resolveSessionUserId();
+
+  const { data: existing } = await supabase
+    .from("items")
+    .select("metadata")
+    .eq("id", itemId)
+    .eq("user_id", userId)
+    .single();
+
+  await removeMirroredFileFromMetadata(asMetadata(existing?.metadata));
 
   const { error } = await supabase.from("items").delete().eq("id", itemId).eq("user_id", userId);
   if (error) throw new Error(`Failed to permanently delete item: ${error.message}`);
@@ -369,6 +528,8 @@ export async function clearCompletedBacklog() {
       .eq("id", row.id)
       .eq("user_id", userId);
 
+    await removeMirroredFileFromMetadata(metadata);
+
     await supabase.from("interactions").insert({
       user_id: userId,
       item_id: row.id,
@@ -405,6 +566,10 @@ export async function purgeExpiredTrash() {
     .map((row) => row.id);
 
   if (purgeIds.length === 0) return;
+
+  for (const row of (archived ?? []).filter((row) => purgeIds.includes(row.id))) {
+    await removeMirroredFileFromMetadata(asMetadata(row.metadata));
+  }
 
   const { error } = await supabase
     .from("items")
@@ -469,12 +634,46 @@ export async function createSubtaskFromSuggestion(formData: FormData) {
       needs_review: false,
       metadata: { parent_item_id: parentId, generated_from: "ai-suggested-action" },
     })
-    .select("id,user_id,title,content,type,status");
+    .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata");
 
   if (error) throw new Error(`Failed to create subtask: ${error.message}`);
 
+  const inserted = (data ?? []) as Array<{
+    id: string;
+    user_id: string;
+    title: string | null;
+    content: string;
+    type: "todo" | "note" | "link";
+    status: "active" | "completed" | "archived";
+    priority_score: number;
+    confidence_score: number | null;
+    needs_review: boolean;
+    created_at: string;
+    updated_at?: string;
+    metadata?: Record<string, unknown>;
+  }>;
+
+  for (const row of inserted) {
+    const mirrored = await mirrorItemToObsidian(row);
+    if (mirrored) {
+      const metadata = asMetadata(row.metadata);
+      await supabase
+        .from("items")
+        .update({ metadata: { ...metadata, obsidian_path: mirrored.obsidianPath } })
+        .eq("id", row.id)
+        .eq("user_id", userId);
+    }
+  }
+
   await indexItemsInVectorStore(
-    (data ?? []) as Array<{ id: string; user_id: string; title: string | null; content: string; type: string; status: string }>,
+    inserted.map((row) => ({
+      id: row.id,
+      user_id: row.user_id,
+      title: row.title,
+      content: row.content,
+      type: row.type,
+      status: row.status,
+    })),
   );
 
   revalidatePath("/app");

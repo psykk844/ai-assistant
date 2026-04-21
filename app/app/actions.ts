@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { classifySmartInput } from "@/lib/smart/classify-with-ai";
 import { requireHardcodedSession, clearHardcodedSession } from "@/lib/auth/session";
 import { resolveSessionUserId } from "@/lib/auth/session-user";
@@ -15,8 +15,8 @@ export async function captureInboxItem(formData: FormData) {
 
   await requireHardcodedSession();
 
-  const supabase = await createClient();
-  const userId = await resolveSessionUserId(supabase);
+  const supabase = createAdminClient();
+  const userId = await resolveSessionUserId();
   const classification = await classifySmartInput(content);
 
   const { error } = await supabase.from("items").insert({
@@ -44,8 +44,8 @@ export async function updateItemStatus(formData: FormData) {
 
   await requireHardcodedSession();
 
-  const supabase = await createClient();
-  const userId = await resolveSessionUserId(supabase);
+  const supabase = createAdminClient();
+  const userId = await resolveSessionUserId();
 
   const { data: existing, error: existingError } = await supabase
     .from("items")
@@ -91,8 +91,8 @@ export async function markItemReviewed(formData: FormData) {
 
   await requireHardcodedSession();
 
-  const supabase = await createClient();
-  const userId = await resolveSessionUserId(supabase);
+  const supabase = createAdminClient();
+  const userId = await resolveSessionUserId();
 
   const { error } = await supabase
     .from("items")

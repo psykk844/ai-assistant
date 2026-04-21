@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireHardcodedSession } from "@/lib/auth/session";
 import { resolveSessionUserId } from "@/lib/auth/session-user";
 import { captureInboxItem, markItemReviewed, signOut, updateItemStatus } from "./actions";
@@ -131,8 +131,8 @@ function Lane({ title, items }: { title: string; items: InboxItem[] }) {
 export default async function AppPage() {
   await requireHardcodedSession();
 
-  const supabase = await createClient();
-  const sessionUserId = await resolveSessionUserId(supabase);
+  const supabase = createAdminClient();
+  const sessionUserId = await resolveSessionUserId();
 
   const { data: items, error } = await supabase
     .from("items")

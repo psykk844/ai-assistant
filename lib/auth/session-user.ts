@@ -1,26 +1,36 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-export async function resolveSessionUserId(supabase: SupabaseClient) {
+const DEFAULT_HARDCODED_EMAIL = "sam@local.dev";
+
+export async function resolveSessionUserId() {
   const configuredUserId = process.env.HARDCODED_USER_ID?.trim();
   if (configuredUserId) return configuredUserId;
 
-  const { data, error } = await supabase
-    .from("items")
-    .select("user_id")
-    .not("user_id", "is", null)
-    .limit(1)
-    .maybeSingle();
+  const admin = createAdminClient();
+  const hardcodedEmail = process.env.HARDCODED_EMAIL?.trim() || DEFAULT_HARDCODED_EMAIL;
 
-  if (error) {
-    throw new Error(`Failed to resolve session user id: ${error.message}`);
+  const { data: usersData, error: usersError } = await admin.auth.admin.listUsers({
+    page: 1,
+    perPage: 200,
+  });
+
+  if (usersError) {
+    throw new Error(`Failed to list auth users: ${usersError.message}`);
   }
 
-  const fallbackUserId = data?.user_id;
-  if (!fallbackUserId) {
-    throw new Error(
-      "No session user id available. Set HARDCODED_USER_ID in environment or seed at least one item row."
-    );
+  const existing = usersData.users.find((user) => user.email === hardcodedEmail);
+  if (existing) return existing.id;
+
+  const generatedPassword = `${crypto.randomUUID()}Aa1!`;
+  const { data: createdData, error: createError } = await admin.auth.admin.createUser({
+    email: hardcodedEmail,
+    password: generatedPassword,
+    email_confirm: true,
+  });
+
+  if (createError || !createdData.user) {
+    throw new Error(`Failed to create hardcoded auth user: ${createError?.message ?? "unknown error"}`);
   }
 
-  return String(fallbackUserId);
+  return createdData.user.id;
 }

@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireHardcodedSession } from "@/lib/auth/session";
 import { resolveSessionUserId } from "@/lib/auth/session-user";
 import { captureInboxItem, markItemReviewed, signOut, updateItemStatus } from "./actions";
-import { SubmitButton } from "./submit-button";
+import { InboxComposer } from "./inbox-composer";
 import { ActionButton } from "./action-button";
 
 type InboxItem = {
@@ -182,22 +182,13 @@ export default async function AppPage() {
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">Smart Inbox</p>
             <h1 className="mt-2 text-2xl font-semibold">Capture anything</h1>
             <p className="mt-2 text-sm text-[var(--text-muted)]">
-              Temporary classifier routes entries before full Piramyd categorization.
+              Classifier routes entries via Claude Opus — powered by OARS.
             </p>
 
-            <form action={captureInboxItem} className="mt-4 space-y-3">
-              <textarea
-                name="content"
-                required
-                placeholder="Drop a thought, task, or URL..."
-                className="h-28 w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
-              />
-              <SubmitButton
-                idleLabel="Add to inbox"
-                pendingLabel="Classifying..."
-                className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-black transition hover:bg-[var(--accent-strong)] disabled:opacity-70"
-              />
-            </form>
+            <InboxComposer
+              action={captureInboxItem}
+              buttonClassName="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-black transition hover:bg-[var(--accent-strong)] disabled:opacity-70"
+            />
           </div>
 
           <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">

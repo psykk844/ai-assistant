@@ -51,7 +51,7 @@ function normalizeClassification(raw: AiPayload | null, fallback: Classification
     metadata: {
       ...fallback.metadata,
       ...(raw.metadata ?? {}),
-      source: "piramyd",
+      source: "oars",
     },
   };
 }
@@ -59,22 +59,21 @@ function normalizeClassification(raw: AiPayload | null, fallback: Classification
 export async function classifySmartInput(content: string): Promise<Classification> {
   const fallback = classifyInput(content);
 
-  const apiKey = process.env.PIRAMYD_API_KEY;
+  const apiKey = process.env.OARS_API_KEY;
   if (!apiKey) {
     return {
       ...fallback,
-      metadata: { ...fallback.metadata, source: "stub-classifier", fallbackReason: "missing-piramyd-api-key" },
+      metadata: { ...fallback.metadata, source: "stub-classifier", fallbackReason: "missing-oars-api-key" },
     };
   }
 
-  const baseUrl = process.env.PIRAMYD_BASE_URL ?? "https://api.piramyd.com";
-  const endpoint = process.env.PIRAMYD_CLASSIFY_ENDPOINT ?? "/v1/chat/completions";
-  const model = process.env.PIRAMYD_MODEL ?? "deepseek-v3.2";
+  const baseUrl = (process.env.OARS_BASE_URL ?? "https://llm.digiwebfr.studio/v1").replace(/\/$/, "");
+  const model = process.env.OARS_MODEL ?? "claude-opus-4-6";
 
   const prompt = `Classify this personal productivity inbox entry into one of: note, todo, link. Return only strict JSON with keys: type, confidenceScore, needsReview, priorityScore, title, metadata.\n\nEntry:\n${content}`;
 
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}${endpoint}`, {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -101,27 +100,29 @@ export async function classifySmartInput(content: string): Promise<Classificatio
         metadata: {
           ...fallback.metadata,
           source: "stub-classifier",
-          fallbackReason: `piramyd-http-${response.status}`,
+          fallbackReason: `oars-http-${response.status}`,
         },
       };
     }
 
     const payload = (await response.json()) as Record<string, unknown>;
-    const direct = (payload.classification ?? payload.output) as AiPayload | undefined;
 
-    if (direct && typeof direct === "object") {
-      return normalizeClassification(direct, fallback);
-    }
-
+    // OpenAI-compatible response: choices[0].message.content
     const textCandidate = (payload.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content;
     if (typeof textCandidate === "string") {
       const parsed = parseJsonBlock(textCandidate);
       return normalizeClassification(parsed, fallback);
     }
 
+    // Direct object response (some proxies)
+    const direct = (payload.classification ?? payload.output) as AiPayload | undefined;
+    if (direct && typeof direct === "object") {
+      return normalizeClassification(direct, fallback);
+    }
+
     return {
       ...fallback,
-      metadata: { ...fallback.metadata, source: "stub-classifier", fallbackReason: "unexpected-piramyd-payload" },
+      metadata: { ...fallback.metadata, source: "stub-classifier", fallbackReason: "unexpected-oars-payload" },
     };
   } catch (error) {
     return {
@@ -129,7 +130,7 @@ export async function classifySmartInput(content: string): Promise<Classificatio
       metadata: {
         ...fallback.metadata,
         source: "stub-classifier",
-        fallbackReason: "piramyd-request-failed",
+        fallbackReason: "oars-request-failed",
         error: error instanceof Error ? error.message : "unknown",
       },
     };

@@ -1,32 +1,21 @@
-import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  const { pathname } = request.nextUrl;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!url || !anonKey) {
-    return response;
+  // Allow public routes
+  if (pathname === "/login" || pathname.startsWith("/_next") || pathname.startsWith("/api")) {
+    return NextResponse.next();
   }
 
-  const supabase = createServerClient(url, anonKey, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        for (const { name, value, options } of cookiesToSet) {
-          request.cookies.set(name, value);
-          response.cookies.set(name, value, options);
-        }
-      },
-    },
-  });
+  // Check auth cookie
+  const authCookie = request.cookies.get("auth");
+  
+  if (!authCookie || authCookie.value !== "true") {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
 
-  await supabase.auth.getUser();
-  return response;
+  return NextResponse.next();
 }
 
 export const config = {

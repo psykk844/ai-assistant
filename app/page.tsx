@@ -1,11 +1,7 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { hasHardcodedSession } from "@/lib/auth/session";
 
 export default async function Home() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  redirect(user ? "/app" : "/login");
+  const authenticated = await hasHardcodedSession();
+  redirect(authenticated ? "/app" : "/login");
 }

@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { classifySmartInput } from "@/lib/smart/classify-with-ai";
+import { requireHardcodedSession, clearHardcodedSession } from "@/lib/auth/session";
+import { resolveSessionUserId } from "@/lib/auth/session-user";
 
 const ALLOWED_STATUSES = new Set(["active", "completed", "archived"]);
 
@@ -11,17 +13,14 @@ export async function captureInboxItem(formData: FormData) {
   const content = String(formData.get("content") ?? "").trim();
   if (!content) return;
 
+  await requireHardcodedSession();
+
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) redirect("/login");
-
+  const userId = await resolveSessionUserId(supabase);
   const classification = await classifySmartInput(content);
 
   const { error } = await supabase.from("items").insert({
-    user_id: user.id,
+    user_id: userId,
     type: classification.type,
     content,
     title: classification.title,
@@ -43,18 +42,16 @@ export async function updateItemStatus(formData: FormData) {
 
   if (!itemId || !ALLOWED_STATUSES.has(status)) return;
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  await requireHardcodedSession();
 
-  if (!user) redirect("/login");
+  const supabase = await createClient();
+  const userId = await resolveSessionUserId(supabase);
 
   const { data: existing, error: existingError } = await supabase
     .from("items")
     .select("status")
     .eq("id", itemId)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .single();
 
   if (existingError) throw new Error(`Failed to load item for status update: ${existingError.message}`);
@@ -68,7 +65,7 @@ export async function updateItemStatus(formData: FormData) {
     .from("items")
     .update(payload)
     .eq("id", itemId)
-    .eq("user_id", user.id);
+    .eq("user_id", userId);
 
   if (error) throw new Error(`Failed to update item status: ${error.message}`);
 
@@ -76,7 +73,7 @@ export async function updateItemStatus(formData: FormData) {
   const action = status === "completed" ? "completed" : "moved";
 
   const { error: interactionError } = await supabase.from("interactions").insert({
-    user_id: user.id,
+    user_id: userId,
     item_id: itemId,
     action,
     from_status: fromStatus,
@@ -92,23 +89,21 @@ export async function markItemReviewed(formData: FormData) {
   const itemId = String(formData.get("itemId") ?? "").trim();
   if (!itemId) return;
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  await requireHardcodedSession();
 
-  if (!user) redirect("/login");
+  const supabase = await createClient();
+  const userId = await resolveSessionUserId(supabase);
 
   const { error } = await supabase
     .from("items")
     .update({ needs_review: false })
     .eq("id", itemId)
-    .eq("user_id", user.id);
+    .eq("user_id", userId);
 
   if (error) throw new Error(`Failed to mark item reviewed: ${error.message}`);
 
   const { error: interactionError } = await supabase.from("interactions").insert({
-    user_id: user.id,
+    user_id: userId,
     item_id: itemId,
     action: "corrected",
     from_status: "review",
@@ -121,7 +116,6 @@ export async function markItemReviewed(formData: FormData) {
 }
 
 export async function signOut() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
+  await clearHardcodedSession();
   redirect("/login");
 }

@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireHardcodedSession } from "@/lib/auth/session";
+import { resolveSessionUserId } from "@/lib/auth/session-user";
 import { captureInboxItem, markItemReviewed, signOut, updateItemStatus } from "./actions";
 import { SubmitButton } from "./submit-button";
 import { ActionButton } from "./action-button";
@@ -127,16 +129,15 @@ function Lane({ title, items }: { title: string; items: InboxItem[] }) {
 }
 
 export default async function AppPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  await requireHardcodedSession();
 
-  if (!user) redirect("/login");
+  const supabase = await createClient();
+  const sessionUserId = await resolveSessionUserId(supabase);
 
   const { data: items, error } = await supabase
     .from("items")
     .select("id, type, title, content, status, priority_score, confidence_score, needs_review, created_at")
+    .eq("user_id", sessionUserId)
     .order("priority_score", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(40);
@@ -219,7 +220,7 @@ export default async function AppPage() {
         <aside className="space-y-4">
           <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">Session</p>
-            <p className="mt-2 break-all text-sm">{user.email}</p>
+            <p className="mt-2 break-all text-sm">{process.env.HARDCODED_USERNAME ?? "sam"}</p>
             <form action={signOut} className="mt-4">
               <button
                 type="submit"

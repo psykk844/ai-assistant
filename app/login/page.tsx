@@ -35,11 +35,11 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
         <div className="mb-6">
           <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">
-            Linear Console
+            Linear Console v2
           </p>
           <h1 className="mt-2 text-2xl font-semibold">AI Assistant Access</h1>
           <p className="mt-2 text-sm text-[var(--text-muted)]">
-            Sign in to continue into your personal command surface.
+            Sign in to continue into your personal command surface. Theme follows your dashboard choice.
           </p>
         </div>
 

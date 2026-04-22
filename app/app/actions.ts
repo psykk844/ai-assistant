@@ -41,6 +41,37 @@ function withoutTrashFlags(metadata: Record<string, unknown>) {
   return rest;
 }
 
+function normalizeTags(input: unknown) {
+  if (Array.isArray(input)) {
+    return Array.from(
+      new Set(
+        input
+          .map((tag) => String(tag ?? "").trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""))
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  if (typeof input === "string") {
+    try {
+      return normalizeTags(JSON.parse(input));
+    } catch {
+      return normalizeTags(input.split(","));
+    }
+  }
+
+  return [] as string[];
+}
+
+type BulkUpdateInput = {
+  status?: "active" | "completed" | "archived";
+  type?: "note" | "todo" | "link";
+  priority_score?: number;
+  tags?: string[];
+  metadata_patch?: Record<string, unknown>;
+  markReviewed?: boolean;
+};
+
 export async function captureInboxItem(formData: FormData) {
   const raw = String(formData.get("content") ?? "").trim();
   if (!raw) return;
@@ -70,7 +101,7 @@ export async function captureInboxItem(formData: FormData) {
   const { data, error } = await supabase
     .from("items")
     .insert(rows)
-    .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata");
+      .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata,tags");
 
   if (error) throw new Error(`Failed to save inbox items: ${error.message}`);
 
@@ -87,6 +118,7 @@ export async function captureInboxItem(formData: FormData) {
     created_at: string;
     updated_at?: string;
     metadata?: Record<string, unknown>;
+    tags: string[];
   }>;
 
   for (const row of inserted) {
@@ -150,7 +182,7 @@ export async function updateItemStatus(formData: FormData) {
     .update(payload)
     .eq("id", itemId)
     .eq("user_id", userId)
-    .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata")
+    .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata,tags")
     .single();
 
   if (error) throw new Error(`Failed to update item status: ${error.message}`);
@@ -168,8 +200,9 @@ export async function updateItemStatus(formData: FormData) {
       needs_review: boolean;
       created_at: string;
       updated_at?: string;
-      metadata?: Record<string, unknown>;
-    });
+       metadata?: Record<string, unknown>;
+       tags: string[];
+     });
     if (mirrored) {
       const metadataNext = asMetadata((updatedItem as { metadata?: Record<string, unknown> }).metadata);
       await supabase
@@ -277,6 +310,7 @@ export async function updateItemDetails(formData: FormData) {
   const type = String(formData.get("type") ?? "").trim();
   const lane = String(formData.get("lane") ?? "").trim() as LaneKey;
   const markReviewed = String(formData.get("markReviewed") ?? "false") === "true";
+  const tags = normalizeTags(formData.get("tags"));
 
   if (!itemId || !content) return;
   if (!ALLOWED_TYPES.has(type)) return;
@@ -295,6 +329,7 @@ export async function updateItemDetails(formData: FormData) {
     title: title || null,
     content,
     type,
+    tags,
     priority_score: laneToPriority(lane),
     status: "active",
     metadata: withoutTrashFlags(asMetadata(existing?.metadata)),
@@ -307,7 +342,7 @@ export async function updateItemDetails(formData: FormData) {
     .update(payload)
     .eq("id", itemId)
     .eq("user_id", userId)
-     .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata")
+     .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata,tags")
     .single();
 
   if (error) throw new Error(`Failed to update item details: ${error.message}`);
@@ -333,6 +368,7 @@ export async function updateItemDetails(formData: FormData) {
     created_at: string;
     updated_at?: string;
     metadata?: Record<string, unknown>;
+    tags: string[];
   };
 
   const mirrored = await mirrorItemToObsidian(updated);
@@ -683,4 +719,55 @@ export async function createSubtaskFromSuggestion(formData: FormData) {
 export async function signOut() {
   await clearHardcodedSession();
   redirect("/login");
+}
+
+export async function bulkUpdateItems(itemIds: string[], updates: BulkUpdateInput) {
+  await requireHardcodedSession();
+
+  const ids = Array.from(new Set(itemIds.map((id) => String(id).trim()).filter(Boolean)));
+  if (ids.length === 0) return;
+
+  const supabase = createAdminClient();
+  const userId = await resolveSessionUserId();
+  const normalizedTags = normalizeTags(updates.tags ?? []);
+
+  const { data: existing, error: loadError } = await supabase
+    .from("items")
+    .select("id,metadata,tags")
+    .eq("user_id", userId)
+    .in("id", ids);
+
+  if (loadError) throw new Error(`Failed to load items for bulk update: ${loadError.message}`);
+
+  await Promise.all(
+    (existing ?? []).map(async (row) => {
+      const payload: Record<string, unknown> = {};
+      if (updates.status) payload.status = updates.status;
+      if (updates.type) payload.type = updates.type;
+      if (typeof updates.priority_score === "number") payload.priority_score = updates.priority_score;
+      if (updates.markReviewed) payload.needs_review = false;
+
+      if (normalizedTags.length > 0) {
+        payload.tags = normalizeTags([...(row.tags ?? []), ...normalizedTags]);
+      }
+
+      if (updates.metadata_patch) {
+        payload.metadata = {
+          ...asMetadata(row.metadata),
+          ...updates.metadata_patch,
+        };
+      }
+
+      const { error } = await supabase
+        .from("items")
+        .update(payload)
+        .eq("id", row.id)
+        .eq("user_id", userId);
+
+      if (error) throw new Error(`Failed to bulk update item ${row.id}: ${error.message}`);
+    }),
+  );
+
+  revalidatePath("/app");
+  revalidatePath("/widget");
 }

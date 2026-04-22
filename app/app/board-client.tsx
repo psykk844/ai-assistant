@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   DndContext,
   PointerSensor,
@@ -32,10 +33,11 @@ import {
   signOut,
   updateItemDetails,
   updateItemStatus,
+  bulkUpdateItems,
 } from "./actions";
 import { laneFromItem, type LaneKey } from "@/lib/items/lane";
 import type { InboxItem } from "@/lib/items/types";
-import { asMetadata, getDragActivationDistance, getDragHandleLabel, isTrash } from "./board-logic";
+import { asMetadata, filterBoardItems, getDragActivationDistance, getDragHandleLabel, isTrash } from "./board-logic";
 
 type AppBoardProps = {
   initialItems: InboxItem[];
@@ -137,8 +139,17 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
   const [sidebarMode, setSidebarMode] = useState<"review" | "chat" | "trash">("review");
   const [relatedResults, setRelatedResults] = useState<SearchResult[]>([]);
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
+  const [editingTags, setEditingTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
+  const [tagsCache, setTagsCache] = useState<Record<string, string[]>>({});
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkTagInput, setBulkTagInput] = useState("");
+  const [showBulkRetag, setShowBulkRetag] = useState(false);
   const [isPending, startTransition] = useTransition();
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const router = useRouter();
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -214,18 +225,17 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
 
   const trashItems = useMemo(() => items.filter((item) => isTrash(item)), [items]);
 
-  const boardItems = useMemo(() => {
-    const base = items.filter((item) => !isTrash(item));
-    if (activeFilter === "all") return base;
-    if (activeFilter === "active" || activeFilter === "completed" || activeFilter === "archived") {
-      return base.filter((item) => item.status === activeFilter);
+  const boardItems = useMemo(() => filterBoardItems(items, activeFilter, activeTagFilter), [items, activeFilter, activeTagFilter]);
+
+  const visibleTags = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of boardItems) {
+      for (const tag of item.tags ?? []) {
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
     }
-    if (activeFilter === "todo" || activeFilter === "note" || activeFilter === "link") {
-      return base.filter((item) => item.type === activeFilter);
-    }
-    if (activeFilter === "trash") return [];
-    return base;
-  }, [items, activeFilter]);
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [boardItems]);
 
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selectedItemId) ?? null,
@@ -363,6 +373,104 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
     }
   }
 
+  function normalizeTag(tag: string) {
+    return tag.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+  }
+
+  function toggleSelected(itemId: string) {
+    setSelectedIds((prev) => (prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId]));
+  }
+
+  function selectAllVisible() {
+    setSelectedIds(boardItems.map((item) => item.id));
+  }
+
+  function clearSelection() {
+    setSelectedIds([]);
+    setShowBulkRetag(false);
+    setBulkTagInput("");
+  }
+
+  function addEditingTag(raw: string) {
+    const normalized = normalizeTag(raw);
+    if (!normalized) return;
+    setEditingTags((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+    setTagInput("");
+  }
+
+  async function fetchSuggestedTags(item: InboxItem) {
+    const cacheKey = `${item.id}:${item.title ?? ""}:${item.content}`;
+    if (tagsCache[cacheKey]) {
+      setSuggestedTags(tagsCache[cacheKey].filter((tag) => !editingTags.includes(tag)));
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/suggest-tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: item.content, title: item.title, type: item.type }),
+      });
+      const payload = (await response.json()) as { tags?: string[] };
+      const next = (payload.tags ?? []).filter(Boolean);
+      setTagsCache((prev) => ({ ...prev, [cacheKey]: next }));
+      setSuggestedTags(next.filter((tag) => !editingTags.includes(tag)));
+    } catch {
+      setSuggestedTags([]);
+    }
+  }
+
+  async function applyBulkUpdate(updates: Parameters<typeof bulkUpdateItems>[1]) {
+    if (selectedIds.length === 0) return;
+    startTransition(async () => {
+      await bulkUpdateItems(selectedIds, updates);
+      clearSelection();
+      router.refresh();
+    });
+  }
+
+  async function handleBulkReclassify() {
+    const selectedItems = items.filter((item) => selectedIds.includes(item.id));
+    startTransition(async () => {
+      for (const item of selectedItems) {
+        const response = await fetch("/api/classify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: item.content }),
+        });
+        const payload = (await response.json()) as { classification?: { type?: InboxItem["type"]; priorityScore?: number } };
+        await bulkUpdateItems([item.id], {
+          type: payload.classification?.type,
+          priority_score: payload.classification?.priorityScore,
+          markReviewed: true,
+        });
+      }
+      clearSelection();
+      router.refresh();
+    });
+  }
+
+  async function handleBulkSuggestTags() {
+    const selectedItems = items.filter((item) => selectedIds.includes(item.id));
+    const merged = new Set<string>();
+    for (const item of selectedItems) {
+      try {
+        const response = await fetch("/api/suggest-tags", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: item.content, title: item.title, type: item.type }),
+        });
+        const payload = (await response.json()) as { tags?: string[] };
+        for (const tag of payload.tags ?? []) merged.add(tag);
+      } catch {
+      }
+    }
+    const suggestions = Array.from(merged).filter(Boolean);
+    if (suggestions.length === 0) return;
+    if (!window.confirm(`Apply suggested tags to ${selectedIds.length} item(s)?\n\n${suggestions.join(", ")}`)) return;
+    await applyBulkUpdate({ tags: suggestions });
+  }
+
   async function loadRelated(item: InboxItem) {
     try {
       const response = await fetch(`/api/search?q=${encodeURIComponent(item.content.slice(0, 240))}`);
@@ -395,7 +503,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                   key={lane}
                   type="button"
                   onClick={() => setFullscreenLane((prev) => (prev === lane ? null : lane))}
-                  className={`w-full rounded-lg border px-3 py-2 text-left transition ${
+                  className={`w-full rounded-lg border px-3 py-2 text-left transition active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 duration-75 ${
                     fullscreenLane === lane
                       ? "border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_14%,transparent)]"
                       : "border-[var(--border)] bg-[var(--bg-muted)] hover:border-[var(--accent)]"
@@ -423,7 +531,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                   <button
                     type="button"
                     onClick={handleVaultSync}
-                    className="rounded-md border border-[var(--border)] px-3 py-1 text-xs hover:border-[var(--accent)]"
+                    className="rounded-md border border-[var(--border)] px-3 py-1 text-xs hover:border-[var(--accent)] active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75"
                   >
                     Sync vault
                   </button>
@@ -473,7 +581,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                             const local = items.find((item) => item.id === result.item.id);
                             if (local) setSelectedItemId(local.id);
                           }}
-                          className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-muted)] p-3 text-left hover:border-[var(--accent)]"
+                          className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-muted)] p-3 text-left hover:border-[var(--accent)] active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75"
                         >
                           <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">{result.source}</p>
                           <p className="mt-1 text-sm font-medium">{result.item.title || "Untitled"}</p>
@@ -503,7 +611,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                     key={key}
                     type="button"
                     onClick={() => setActiveFilter((prev) => (prev === key ? "all" : key))}
-                    className={`rounded-md border px-2 py-1 ${
+                    className={`rounded-md border px-2 py-1 active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 ${
                       activeFilter === key
                         ? "border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_14%,transparent)]"
                         : "border-[var(--border)] bg-[var(--bg-muted)] hover:border-[var(--accent)]"
@@ -512,6 +620,46 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                     {label}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={selectAllVisible}
+                  className="rounded-md border border-[var(--border)] bg-[var(--bg-muted)] px-2 py-1 active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 hover:border-[var(--accent)]"
+                >
+                  Select all visible
+                </button>
+              </div>
+
+              <div className="mt-4">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-[var(--text-muted)]">Tags</span>
+                  {visibleTags.length === 0 ? (
+                    <span className="text-[var(--text-muted)]">No tags yet</span>
+                  ) : (
+                    visibleTags.map(([tag, count]) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => setActiveTagFilter((prev) => (prev === tag ? null : tag))}
+                        className={`rounded-full border px-2 py-1 active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 ${
+                          activeTagFilter === tag
+                            ? "border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_14%,transparent)]"
+                            : "border-[var(--border)] bg-[var(--bg-muted)] hover:border-[var(--accent)]"
+                        }`}
+                      >
+                        #{tag} · {count}
+                      </button>
+                    ))
+                  )}
+                  {activeTagFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTagFilter(null)}
+                      className="rounded-full border border-[var(--border)] bg-[var(--bg-muted)] px-2 py-1 active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 hover:border-[var(--accent)]"
+                    >
+                      Clear tag
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -520,7 +668,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                 <form action={clearCompletedBacklog}>
                   <button
                     type="submit"
-                    className="rounded-md border border-[var(--border)] px-3 py-2 text-xs hover:border-[var(--accent)]"
+                    className="rounded-md border border-[var(--border)] px-3 py-2 text-xs hover:border-[var(--accent)] active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75"
                   >
                     Clear completed to trash
                   </button>
@@ -528,7 +676,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                 <form action={purgeExpiredTrash}>
                   <button
                     type="submit"
-                    className="rounded-md border border-[var(--border)] px-3 py-2 text-xs hover:border-rose-300/50"
+                    className="rounded-md border border-[var(--border)] px-3 py-2 text-xs hover:border-rose-300/50 active:scale-95 active:brightness-90 active:bg-red-700 dark:active:bg-red-800 transition-transform duration-75"
                   >
                     Purge trash older than 30 days
                   </button>
@@ -547,6 +695,9 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                     items={byLane[lane]}
                     onOpenItem={setSelectedItemId}
                     pending={isPending}
+                    selectedIds={selectedIds}
+                    onToggleSelected={toggleSelected}
+                    onTagSelect={setActiveTagFilter}
                   />
                 ))}
               </div>
@@ -562,14 +713,14 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                 <button
                   type="button"
                   onClick={toggleTheme}
-                  className="rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm transition hover:border-[var(--accent)]"
+                  className="rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm transition hover:border-[var(--accent)] active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 duration-75"
                 >
                   {theme === "dark" ? "☀ Light" : "🌙 Dark"}
                 </button>
                 <form action={signOut}>
                   <button
                     type="submit"
-                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm transition hover:border-[var(--accent)]"
+                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm transition hover:border-[var(--accent)] active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 duration-75"
                   >
                     Sign out
                   </button>
@@ -591,21 +742,21 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                 <button
                   type="button"
                   onClick={() => setSidebarMode("review")}
-                  className={`rounded-md border px-2 py-1 text-xs ${sidebarMode === "review" ? "border-[var(--accent)]" : "border-[var(--border)]"}`}
+                  className={`rounded-md border px-2 py-1 text-xs active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 ${sidebarMode === "review" ? "border-[var(--accent)]" : "border-[var(--border)]"}`}
                 >
                   Review ({reviewItems.length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setSidebarMode("chat")}
-                  className={`rounded-md border px-2 py-1 text-xs ${sidebarMode === "chat" ? "border-[var(--accent)]" : "border-[var(--border)]"}`}
+                  className={`rounded-md border px-2 py-1 text-xs active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 ${sidebarMode === "chat" ? "border-[var(--accent)]" : "border-[var(--border)]"}`}
                 >
                   AI chat
                 </button>
                 <button
                   type="button"
                   onClick={() => setSidebarMode("trash")}
-                  className={`rounded-md border px-2 py-1 text-xs ${sidebarMode === "trash" ? "border-[var(--accent)]" : "border-[var(--border)]"}`}
+                  className={`rounded-md border px-2 py-1 text-xs active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 ${sidebarMode === "trash" ? "border-[var(--accent)]" : "border-[var(--border)]"}`}
                 >
                   Trash ({trashItems.length})
                 </button>
@@ -618,13 +769,13 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                   <ul className="space-y-2">
                     {reviewItems.slice(0, 8).map((item) => (
                       <li key={item.id} className="rounded-md border border-amber-300/20 bg-amber-300/10 p-2">
-                        <button type="button" className="w-full text-left" onClick={() => setSelectedItemId(item.id)}>
+                        <button type="button" className="w-full text-left active:scale-95 active:brightness-90 transition-transform duration-75" onClick={() => setSelectedItemId(item.id)}>
                           <p className="text-xs font-medium">{item.title || "Untitled"}</p>
                           <p className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">{item.content}</p>
                         </button>
                         <form action={markItemReviewed} className="mt-2">
                           <input type="hidden" name="itemId" value={item.id} />
-                          <button type="submit" className="rounded-md border border-[var(--border)] px-2 py-1 text-xs">
+                          <button type="submit" className="rounded-md border border-[var(--border)] px-2 py-1 text-xs active:scale-95 active:brightness-90 active:bg-green-700 dark:active:bg-green-800 transition-transform duration-75">
                             Mark reviewed
                           </button>
                         </form>
@@ -668,7 +819,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                                 await captureInboxItem(formData);
                               });
                             }}
-                            className="mt-2 rounded-md border border-[var(--border)] px-2 py-1 text-xs hover:border-[var(--accent)]"
+                            className="mt-2 rounded-md border border-[var(--border)] px-2 py-1 text-xs hover:border-[var(--accent)] active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75"
                           >
                             Convert to note
                           </button>
@@ -688,7 +839,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                       type="button"
                       onClick={handleAskChat}
                       disabled={chatLoading}
-                      className="w-full rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-black disabled:opacity-60"
+                      className="w-full rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-black disabled:opacity-60 active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75"
                     >
                       {chatLoading ? "Thinking…" : "Ask AI"}
                     </button>
@@ -705,7 +856,35 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
           item={selectedItem}
           lane={laneFromItem(selectedItem)}
           related={relatedResults}
+          editingTags={editingTags}
+          tagInput={tagInput}
+          suggestedTags={suggestedTags}
+          setTagInput={setTagInput}
+          setEditingTags={setEditingTags}
+          addEditingTag={addEditingTag}
           onClose={() => setSelectedItemId(null)}
+        />
+      )}
+
+      {selectedIds.length > 0 && (
+        <BulkActionBar
+          count={selectedIds.length}
+          bulkTagInput={bulkTagInput}
+          setBulkTagInput={setBulkTagInput}
+          showBulkRetag={showBulkRetag}
+          setShowBulkRetag={setShowBulkRetag}
+          onArchive={() => void applyBulkUpdate({ status: "completed" })}
+          onTrash={() => void applyBulkUpdate({ status: "archived", metadata_patch: { dismissed: true, deleted_at: new Date().toISOString() } })}
+          onMoveLane={(lane) => void applyBulkUpdate({ status: "active", priority_score: lane === "today" ? 0.85 : lane === "next" ? 0.7 : 0.4 })}
+          onRetag={() => {
+            const tags = bulkTagInput.split(",").map((tag) => normalizeTag(tag)).filter(Boolean);
+            setShowBulkRetag(false);
+            setBulkTagInput("");
+            void applyBulkUpdate({ tags });
+          }}
+          onReclassify={() => void handleBulkReclassify()}
+          onSuggestTags={() => void handleBulkSuggestTags()}
+          onClose={clearSelection}
         />
       )}
 
@@ -734,11 +913,17 @@ function LaneColumn({
   items,
   onOpenItem,
   pending,
+  selectedIds,
+  onToggleSelected,
+  onTagSelect,
 }: {
   lane: LaneKey;
   items: InboxItem[];
   onOpenItem: (itemId: string) => void;
   pending: boolean;
+  selectedIds: string[];
+  onToggleSelected: (itemId: string) => void;
+  onTagSelect: (tag: string | null) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: lane });
 
@@ -758,7 +943,7 @@ function LaneColumn({
         <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
           <ul className="space-y-3">
             {items.map((item, index) => (
-              <SortableCard key={item.id} item={item} onOpen={() => onOpenItem(item.id)} pending={pending} index={index} />
+              <SortableCard key={item.id} item={item} onOpen={() => onOpenItem(item.id)} pending={pending} index={index} selected={selectedIds.includes(item.id)} onToggleSelected={() => onToggleSelected(item.id)} onTagSelect={onTagSelect} />
             ))}
           </ul>
         </SortableContext>
@@ -772,11 +957,17 @@ function SortableCard({
   onOpen,
   pending,
   index,
+  selected,
+  onToggleSelected,
+  onTagSelect,
 }: {
   item: InboxItem;
   onOpen: () => void;
   pending: boolean;
   index: number;
+  selected: boolean;
+  onToggleSelected: () => void;
+  onTagSelect: (tag: string | null) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
 
@@ -797,12 +988,16 @@ function SortableCard({
     <li
       ref={setNodeRef}
       style={style}
-      className="card-enter rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] p-3 cursor-grab active:cursor-grabbing select-none"
+      className={`group card-enter rounded-lg border p-3 cursor-grab active:cursor-grabbing select-none ${selected ? "border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_10%,var(--bg-muted))]" : "border-[var(--border)] bg-[var(--bg-muted)]"}`}
       aria-label={getDragHandleLabel(item)}
       {...attributes}
       {...listeners}
     >
       <div className="mb-2 flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] opacity-70 transition group-hover:opacity-100">
+          <input type="checkbox" checked={selected} onChange={onToggleSelected} onPointerDown={stopDrag} />
+          Select
+        </label>
         <span className={`rounded-md border px-2 py-0.5 text-xs font-mono uppercase ${typeStyles(item.type)}`}>
           {item.type}
         </span>
@@ -812,7 +1007,21 @@ function SortableCard({
             review
           </span>
         )}
-        <button type="button" onClick={onOpen} onPointerDown={stopDrag} className="ml-auto text-xs text-[var(--text-muted)] hover:text-[var(--text)]">
+        {(item.tags ?? []).slice(0, 3).map((tag) => (
+          <button
+            key={tag}
+            type="button"
+            onClick={() => onTagSelect(tag)}
+            onPointerDown={stopDrag}
+            className="rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-0.5 text-[11px] text-[var(--text-muted)] active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 hover:border-[var(--accent)]"
+          >
+            #{tag}
+          </button>
+        ))}
+        {(item.tags ?? []).length > 3 && (
+          <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]">+{(item.tags ?? []).length - 3} more</span>
+        )}
+        <button type="button" onClick={onOpen} onPointerDown={stopDrag} className="ml-auto text-xs text-[var(--text-muted)] hover:text-[var(--text)] active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75">
           Open
         </button>
       </div>
@@ -828,7 +1037,7 @@ function SortableCard({
           <input type="hidden" name="status" value={item.status === "completed" ? "active" : "completed"} />
           <button
             type="submit"
-            className="rounded-md border border-[var(--border)] px-2 py-1 text-xs transition hover:border-emerald-300/40 hover:text-emerald-200 disabled:opacity-70"
+            className="rounded-md border border-[var(--border)] px-2 py-1 text-xs transition hover:border-emerald-300/40 hover:text-emerald-200 disabled:opacity-70 active:scale-95 active:brightness-90 active:bg-green-700 dark:active:bg-green-800 transition-transform duration-75"
             disabled={pending}
           >
             {item.status === "completed" ? "Reopen" : "Complete"}
@@ -839,7 +1048,7 @@ function SortableCard({
           <input type="hidden" name="itemId" value={item.id} />
           <button
             type="submit"
-            className="rounded-md border border-[var(--border)] px-2 py-1 text-xs transition hover:border-rose-300/40 hover:text-rose-200 disabled:opacity-70"
+            className="rounded-md border border-[var(--border)] px-2 py-1 text-xs transition hover:border-rose-300/40 hover:text-rose-200 disabled:opacity-70 active:scale-95 active:brightness-90 active:bg-red-700 dark:active:bg-red-800 transition-transform duration-75"
             disabled={pending}
           >
             Move to trash
@@ -878,7 +1087,7 @@ function TrashSection({
                   <button
                     type="submit"
                     disabled={pending}
-                    className="rounded-md border border-[var(--border)] px-2 py-1 text-xs hover:border-[var(--accent)]"
+                    className="rounded-md border border-[var(--border)] px-2 py-1 text-xs hover:border-[var(--accent)] active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75"
                   >
                     Restore
                   </button>
@@ -888,7 +1097,7 @@ function TrashSection({
                   <button
                     type="submit"
                     disabled={pending}
-                    className="rounded-md border border-rose-300/50 px-2 py-1 text-xs text-rose-200 hover:bg-rose-300/10"
+                    className="rounded-md border border-rose-300/50 px-2 py-1 text-xs text-rose-200 hover:bg-rose-300/10 active:scale-95 active:brightness-90 active:bg-red-700 dark:active:bg-red-800 transition-transform duration-75"
                   >
                     Delete forever
                   </button>
@@ -906,11 +1115,23 @@ function DetailPanel({
   item,
   lane,
   related,
+  editingTags,
+  tagInput,
+  suggestedTags,
+  setTagInput,
+  setEditingTags,
+  addEditingTag,
   onClose,
 }: {
   item: InboxItem;
   lane: LaneKey;
   related: SearchResult[];
+  editingTags: string[];
+  tagInput: string;
+  suggestedTags: string[];
+  setTagInput: (value: string) => void;
+  setEditingTags: React.Dispatch<React.SetStateAction<string[]>>;
+  addEditingTag: (raw: string) => void;
   onClose: () => void;
 }) {
   const suggestions = getSuggestions(item);
@@ -923,13 +1144,14 @@ function DetailPanel({
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Item details</h2>
-          <button type="button" onClick={onClose} className="rounded-md border border-[var(--border)] px-2 py-1 text-xs">
+          <button type="button" onClick={onClose} className="rounded-md border border-[var(--border)] px-2 py-1 text-xs active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75">
             Esc
           </button>
         </div>
 
         <form action={updateItemDetails} className="space-y-3">
           <input type="hidden" name="itemId" value={item.id} />
+          <input type="hidden" name="tags" value={JSON.stringify(editingTags)} />
 
           <label className="block text-sm">
             <span className="mb-1 block text-[var(--text-muted)]">Title</span>
@@ -966,7 +1188,65 @@ function DetailPanel({
             Mark as reviewed
           </label>
 
-          <button type="submit" className="rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-black">
+          <section className="space-y-3 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] p-3">
+            <div>
+              <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--text-muted)]">Tags</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {editingTags.length === 0 ? (
+                  <span className="text-xs text-[var(--text-muted)]">No tags yet</span>
+                ) : (
+                  editingTags.map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setEditingTags((prev) => prev.filter((entry) => entry !== tag))}
+                      className="rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1 text-xs active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 hover:border-rose-300/60"
+                    >
+                      #{tag} ×
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <label className="block text-sm">
+              <span className="mb-1 block text-[var(--text-muted)]">Add tag</span>
+              <input
+                value={tagInput}
+                onChange={(event) => setTagInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === ",") {
+                    event.preventDefault();
+                    addEditingTag(tagInput);
+                  }
+                }}
+                placeholder="work, ai, personal-admin"
+                className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2"
+              />
+            </label>
+
+            <div>
+              <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--text-muted)]">AI suggestions</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {suggestedTags.length === 0 ? (
+                  <span className="text-xs text-[var(--text-muted)]">No suggestions right now</span>
+                ) : (
+                  suggestedTags.map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => addEditingTag(tag)}
+                      className="rounded-full border border-dashed border-[var(--accent)] bg-transparent px-2 py-1 text-xs text-[var(--text-muted)] active:scale-95 active:brightness-90 transition-transform duration-75 hover:bg-[color-mix(in_oklab,var(--accent)_10%,transparent)]"
+                    >
+                      + #{tag}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </section>
+
+          <button type="submit" className="rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-black active:scale-95 active:brightness-90 active:bg-green-700 dark:active:bg-green-800 transition-transform duration-75">
             Save changes
           </button>
         </form>
@@ -975,14 +1255,14 @@ function DetailPanel({
           <form action={updateItemStatus}>
             <input type="hidden" name="itemId" value={item.id} />
             <input type="hidden" name="status" value="completed" />
-            <button type="submit" className="rounded-md border border-[var(--border)] px-3 py-2 text-sm">
+            <button type="submit" className="rounded-md border border-[var(--border)] px-3 py-2 text-sm active:scale-95 active:brightness-90 active:bg-green-700 dark:active:bg-green-800 transition-transform duration-75">
               Complete
             </button>
           </form>
 
           <form action={dismissItem}>
             <input type="hidden" name="itemId" value={item.id} />
-            <button type="submit" className="rounded-md border border-rose-300/40 px-3 py-2 text-sm text-rose-200">
+            <button type="submit" className="rounded-md border border-rose-300/40 px-3 py-2 text-sm text-rose-200 active:scale-95 active:brightness-90 active:bg-red-700 dark:active:bg-red-800 transition-transform duration-75">
               Move to trash
             </button>
           </form>
@@ -995,7 +1275,7 @@ function DetailPanel({
               <form key={suggestion} action={createSubtaskFromSuggestion}>
                 <input type="hidden" name="itemId" value={item.id} />
                 <input type="hidden" name="text" value={suggestion} />
-                <button type="submit" className="rounded-full border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-1 text-xs hover:border-[var(--accent)]">
+                <button type="submit" className="rounded-full border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-1 text-xs hover:border-[var(--accent)] active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75">
                   {suggestion}
                 </button>
               </form>
@@ -1035,6 +1315,70 @@ function EmptyLane({ lane }: { lane: LaneKey }) {
         <rect x="30" y="48" width="108" height="6" rx="3" fill="currentColor" opacity="0.24" />
       </svg>
       <p className="mt-2 text-sm text-[var(--text-muted)]">No items in {title}.</p>
+    </div>
+  );
+}
+
+function BulkActionBar({
+  count,
+  bulkTagInput,
+  setBulkTagInput,
+  showBulkRetag,
+  setShowBulkRetag,
+  onArchive,
+  onTrash,
+  onMoveLane,
+  onRetag,
+  onReclassify,
+  onSuggestTags,
+  onClose,
+}: {
+  count: number;
+  bulkTagInput: string;
+  setBulkTagInput: (value: string) => void;
+  showBulkRetag: boolean;
+  setShowBulkRetag: (value: boolean) => void;
+  onArchive: () => void;
+  onTrash: () => void;
+  onMoveLane: (lane: LaneKey) => void;
+  onRetag: () => void;
+  onReclassify: () => void;
+  onSuggestTags: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed bottom-6 left-1/2 z-50 flex w-[min(92vw,860px)] -translate-x-1/2 flex-wrap items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-3 shadow-2xl">
+      <span className="mr-2 text-sm text-[var(--text-muted)]">{count} selected</span>
+      <button type="button" onClick={onArchive} className="rounded-md border border-[var(--border)] px-3 py-2 text-xs active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 hover:border-[var(--accent)]">Archive all</button>
+      <button type="button" onClick={onTrash} className="rounded-md border border-rose-300/40 px-3 py-2 text-xs text-rose-200 active:scale-95 active:brightness-90 active:bg-red-700 dark:active:bg-red-800 transition-transform duration-75 hover:bg-rose-300/10">Trash all</button>
+      <select onChange={(event) => onMoveLane(event.target.value as LaneKey)} defaultValue="" className="rounded-md border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-xs">
+        <option value="" disabled>Move to lane</option>
+        <option value="today">Today</option>
+        <option value="next">Next Up</option>
+        <option value="backlog">Backlog</option>
+      </select>
+      <div className="relative">
+        <button type="button" onClick={() => setShowBulkRetag(!showBulkRetag)} className="rounded-md border border-[var(--border)] px-3 py-2 text-xs active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 hover:border-[var(--accent)]">Retag</button>
+        {showBulkRetag && (
+          <div className="absolute bottom-12 left-0 w-64 rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-3 shadow-xl">
+            <input
+              value={bulkTagInput}
+              onChange={(event) => setBulkTagInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  onRetag();
+                }
+              }}
+              placeholder="comma,separated,tags"
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-xs"
+            />
+          </div>
+        )}
+      </div>
+      <button type="button" onClick={onReclassify} className="rounded-md border border-[var(--border)] px-3 py-2 text-xs active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 hover:border-[var(--accent)]">Re-classify all</button>
+      <button type="button" onClick={onSuggestTags} className="rounded-md border border-[var(--border)] px-3 py-2 text-xs active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 hover:border-[var(--accent)]">Suggest tags for all</button>
+      <button type="button" onClick={onClose} className="ml-auto rounded-md border border-[var(--border)] px-3 py-2 text-xs active:scale-95 active:brightness-90 active:bg-slate-200 dark:active:bg-slate-700 transition-transform duration-75 hover:border-[var(--accent)]">✕</button>
     </div>
   );
 }

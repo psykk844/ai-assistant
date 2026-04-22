@@ -13,7 +13,7 @@ export default async function AppPage() {
 
   const { data: items, error } = await supabase
     .from("items")
-    .select("id, type, title, content, status, priority_score, confidence_score, needs_review, created_at, updated_at, metadata")
+    .select("id, type, title, content, status, priority_score, confidence_score, needs_review, created_at, updated_at, metadata, tags")
     .eq("user_id", sessionUserId)
     .order("priority_score", { ascending: false })
     .order("created_at", { ascending: false })

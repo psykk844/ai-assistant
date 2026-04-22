@@ -24,6 +24,7 @@ export type InboxItem = {
   created_at: string;
   updated_at?: string;
   metadata?: ItemMetadata | null;
+  tags: string[];
 };
 
 export type ItemWithLane = InboxItem & { lane: LaneKey };

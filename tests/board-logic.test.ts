@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getDragActivationDistance, isTrash, shouldHideFromInitialBoard } from "../app/app/board-logic";
 
@@ -60,5 +62,62 @@ describe("board logic regressions", () => {
     };
 
     expect(getDragHandleLabel(item as never)).toBe("Drag item Drag me");
+  });
+
+  it("InboxItem supports tags arrays", () => {
+    const item: import("../lib/items/types").InboxItem = {
+      id: "tag-1",
+      title: "Tagged",
+      content: "hello",
+      type: "note",
+      status: "active",
+      priority_score: 0.7,
+      confidence_score: 0.9,
+      needs_review: false,
+      created_at: new Date().toISOString(),
+      metadata: {},
+      tags: [],
+    };
+
+    expect(item.tags).toEqual([]);
+  });
+
+  it("includes a suggest-tags API route file", () => {
+    expect(existsSync(resolve(process.cwd(), "app/api/suggest-tags/route.ts"))).toBe(true);
+  });
+
+  it("filters board items by active tag when present", async () => {
+    const { filterBoardItems } = await import("../app/app/board-logic");
+
+    const items = [
+      {
+        id: "1",
+        title: "One",
+        content: "alpha",
+        type: "note",
+        status: "active",
+        priority_score: 0.8,
+        confidence_score: 0.9,
+        needs_review: false,
+        created_at: new Date().toISOString(),
+        metadata: {},
+        tags: ["work", "ai"],
+      },
+      {
+        id: "2",
+        title: "Two",
+        content: "beta",
+        type: "todo",
+        status: "active",
+        priority_score: 0.5,
+        confidence_score: 0.9,
+        needs_review: false,
+        created_at: new Date().toISOString(),
+        metadata: {},
+        tags: ["home"],
+      },
+    ];
+
+    expect(filterBoardItems(items as never, "all", "work").map((item) => item.id)).toEqual(["1"]);
   });
 });

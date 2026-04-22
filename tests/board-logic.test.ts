@@ -182,6 +182,69 @@ describe("board logic regressions", () => {
     expect(filterBoardItems(items as never, "all", null).map((item) => item.id)).toEqual(["active-today"]);
   });
 
+  it("excludes completed items from type-based filters (todo, note, link)", async () => {
+    const { filterBoardItems } = await import("../app/app/board-logic");
+
+    const items = [
+      {
+        id: "active-todo",
+        title: "Active todo",
+        content: "still active",
+        type: "todo",
+        status: "active",
+        priority_score: 0.85,
+        confidence_score: 0.9,
+        needs_review: false,
+        created_at: new Date().toISOString(),
+        metadata: {},
+        tags: [],
+      },
+      {
+        id: "completed-todo",
+        title: "Completed todo",
+        content: "done",
+        type: "todo",
+        status: "completed",
+        priority_score: 0.85,
+        confidence_score: 0.9,
+        needs_review: false,
+        created_at: new Date().toISOString(),
+        metadata: {},
+        tags: [],
+      },
+      {
+        id: "active-note",
+        title: "Active note",
+        content: "still active",
+        type: "note",
+        status: "active",
+        priority_score: 0.7,
+        confidence_score: 0.9,
+        needs_review: false,
+        created_at: new Date().toISOString(),
+        metadata: {},
+        tags: [],
+      },
+      {
+        id: "completed-note",
+        title: "Completed note",
+        content: "done",
+        type: "note",
+        status: "completed",
+        priority_score: 0.7,
+        confidence_score: 0.9,
+        needs_review: false,
+        created_at: new Date().toISOString(),
+        metadata: {},
+        tags: [],
+      },
+    ];
+
+    // Type filters should only show active items of that type
+    expect(filterBoardItems(items as never, "todo", null).map((i) => i.id)).toEqual(["active-todo"]);
+    expect(filterBoardItems(items as never, "note", null).map((i) => i.id)).toEqual(["active-note"]);
+  });
+
   it("uses a dedicated drag handle class so action buttons remain clickable", async () => {
     const source = await import("node:fs/promises").then((fs) =>
       fs.readFile(resolve(process.cwd(), "app/app/board-client.tsx"), "utf8"),

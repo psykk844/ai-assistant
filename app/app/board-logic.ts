@@ -29,16 +29,18 @@ export function shouldHideFromInitialBoard(item: InboxItem) {
 export function filterBoardItems(items: InboxItem[], activeFilter: FilterKey, activeTagFilter: string | null) {
   const base = items.filter((item) => !isTrash(item));
 
-  let filtered = base;
+  let filtered: InboxItem[];
   if (activeFilter === "all") {
     filtered = base.filter((item) => item.status === "active");
-  }
-  if (activeFilter === "active" || activeFilter === "completed" || activeFilter === "archived") {
+  } else if (activeFilter === "active" || activeFilter === "completed" || activeFilter === "archived") {
     filtered = base.filter((item) => item.status === activeFilter);
   } else if (activeFilter === "todo" || activeFilter === "note" || activeFilter === "link") {
-    filtered = base.filter((item) => item.type === activeFilter);
+    // Type filters should only show active items of that type — completed/archived belong in their own filters
+    filtered = base.filter((item) => item.type === activeFilter && item.status === "active");
   } else if (activeFilter === "trash") {
     filtered = [];
+  } else {
+    filtered = base;
   }
 
   if (!activeTagFilter) return filtered;

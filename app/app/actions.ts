@@ -9,10 +9,47 @@ import { resolveSessionUserId } from "@/lib/auth/session-user";
 import { laneToPriority, type LaneKey } from "@/lib/items/lane";
 import { indexItemsInVectorStore } from "@/lib/items/embeddings";
 import { mirrorItemToObsidian, removeMirroredFileFromMetadata } from "@/lib/obsidian/mirror";
+import { appendFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
 
 const ALLOWED_STATUSES = new Set(["active", "completed", "archived"]);
 const ALLOWED_TYPES = new Set(["note", "todo", "link"]);
 const TRASH_RETENTION_DAYS = 30;
+const SERVER_ACTION_ERROR_LOG_PATH = process.env.SERVER_ACTION_ERROR_LOG_PATH?.trim() || "/workspace/ai-assistant/.runtime-logs/server-action-errors.log";
+
+function serializeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  return {
+    message: String(error),
+  };
+}
+
+async function persistServerActionError(action: string, context: Record<string, unknown>) {
+  try {
+    await mkdir(dirname(SERVER_ACTION_ERROR_LOG_PATH), { recursive: true });
+    await appendFile(
+      SERVER_ACTION_ERROR_LOG_PATH,
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        action,
+        ...context,
+      }) + "\n",
+      "utf8",
+    );
+  } catch (persistError) {
+    console.error("Failed to persist server action error log", {
+      action,
+      persistError: serializeError(persistError),
+    });
+  }
+}
 
 function splitInboxChunks(raw: string): string[] {
   const blankLineParts = raw.split(/\n\s*\n/).map((c) => c.trim()).filter(Boolean);
@@ -154,79 +191,141 @@ export async function updateItemStatus(formData: FormData) {
 
   if (!itemId || !ALLOWED_STATUSES.has(status)) return;
 
-  await requireHardcodedSession();
+  try {
+    await requireHardcodedSession();
 
-  const supabase = createAdminClient();
-  const userId = await resolveSessionUserId();
+    const supabase = createAdminClient();
+    const userId = await resolveSessionUserId();
 
-  const { data: existing, error: existingError } = await supabase
-    .from("items")
-    .select("status, metadata")
-    .eq("id", itemId)
-    .eq("user_id", userId)
-    .single();
+    const { data: existing, error: existingError } = await supabase
+      .from("items")
+      .select("status, metadata")
+      .eq("id", itemId)
+      .eq("user_id", userId)
+      .single();
 
-  if (existingError) throw new Error(`Failed to load item for status update: ${existingError.message}`);
-
-  const metadata = asMetadata(existing?.metadata);
-
-  const payload: Record<string, unknown> = {
-    status,
-    completed_at: status === "completed" ? new Date().toISOString() : null,
-  };
-
-  if (status === "active") payload.metadata = withoutTrashFlags(metadata);
-
-  const { data: updatedItem, error } = await supabase
-    .from("items")
-    .update(payload)
-    .eq("id", itemId)
-    .eq("user_id", userId)
-    .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata,tags")
-    .single();
-
-  if (error) throw new Error(`Failed to update item status: ${error.message}`);
-
-  if (updatedItem && status !== "archived") {
-    const mirrored = await mirrorItemToObsidian(updatedItem as {
-      id: string;
-      user_id: string;
-      title: string | null;
-      content: string;
-      type: "todo" | "note" | "link";
-      status: "active" | "completed" | "archived";
-      priority_score: number;
-      confidence_score: number | null;
-      needs_review: boolean;
-      created_at: string;
-      updated_at?: string;
-       metadata?: Record<string, unknown>;
-       tags: string[];
-     });
-    if (mirrored) {
-      const metadataNext = asMetadata((updatedItem as { metadata?: Record<string, unknown> }).metadata);
-      await supabase
-        .from("items")
-        .update({ metadata: { ...metadataNext, obsidian_path: mirrored.obsidianPath } })
-        .eq("id", itemId)
-        .eq("user_id", userId);
+    if (existingError) {
+      console.error("Failed to load item for status update", { itemId, status, error: existingError });
+      await persistServerActionError("updateItemStatus:load", {
+        itemId,
+        status,
+        error: serializeError(existingError),
+      });
+      return;
     }
+
+    const metadata = asMetadata(existing?.metadata);
+
+    const payload: Record<string, unknown> = {
+      status,
+      completed_at: status === "completed" ? new Date().toISOString() : null,
+    };
+
+    if (status === "active") payload.metadata = withoutTrashFlags(metadata);
+
+    const { data: updatedItem, error } = await supabase
+      .from("items")
+      .update(payload)
+      .eq("id", itemId)
+      .eq("user_id", userId)
+      .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata,tags")
+      .single();
+
+    if (error) {
+      console.error("Failed to update item status", { itemId, status, error });
+      await persistServerActionError("updateItemStatus:update", {
+        itemId,
+        status,
+        error: serializeError(error),
+      });
+      return;
+    }
+
+    if (updatedItem && status !== "archived") {
+      try {
+        const mirrored = await mirrorItemToObsidian(updatedItem as {
+          id: string;
+          user_id: string;
+          title: string | null;
+          content: string;
+          type: "todo" | "note" | "link";
+          status: "active" | "completed" | "archived";
+          priority_score: number;
+          confidence_score: number | null;
+          needs_review: boolean;
+          created_at: string;
+          updated_at?: string;
+          metadata?: Record<string, unknown>;
+          tags: string[];
+        });
+        if (mirrored) {
+          const metadataNext = asMetadata((updatedItem as { metadata?: Record<string, unknown> }).metadata);
+          await supabase
+            .from("items")
+            .update({ metadata: { ...metadataNext, obsidian_path: mirrored.obsidianPath } })
+            .eq("id", itemId)
+            .eq("user_id", userId);
+        }
+      } catch (error) {
+        console.error("Failed to mirror updated item to Obsidian", {
+          itemId,
+          status,
+          error,
+        });
+      }
+    }
+
+    const fromStatus = String(existing.status ?? "active");
+    const action = status === "completed" ? "completed" : "moved";
+
+    try {
+      await supabase.from("interactions").insert({
+        user_id: userId,
+        item_id: itemId,
+        action,
+        from_status: fromStatus,
+        to_status: status,
+      });
+    } catch (error) {
+      console.error("Failed to log item status interaction", {
+        itemId,
+        fromStatus,
+        toStatus: status,
+        error,
+      });
+      await persistServerActionError("updateItemStatus:interaction", {
+        itemId,
+        fromStatus,
+        toStatus: status,
+        error: serializeError(error),
+      });
+    }
+
+    try {
+      revalidatePath("/app");
+      revalidatePath("/widget");
+    } catch (error) {
+      console.error("Failed to revalidate after status update", { itemId, status, error });
+      await persistServerActionError("updateItemStatus:revalidate", {
+        itemId,
+        status,
+        error: serializeError(error),
+      });
+    }
+  } catch (error) {
+    console.error("Unhandled error in updateItemStatus", {
+      itemId,
+      status,
+      error,
+    });
+    await persistServerActionError("updateItemStatus:unhandled", {
+      itemId,
+      status,
+      error: serializeError(error),
+    });
   }
-
-  const fromStatus = String(existing.status ?? "active");
-  const action = status === "completed" ? "completed" : "moved";
-
-  await supabase.from("interactions").insert({
-    user_id: userId,
-    item_id: itemId,
-    action,
-    from_status: fromStatus,
-    to_status: status,
-  });
-
-  revalidatePath("/app");
-  revalidatePath("/widget");
 }
+
 
 export async function moveItemToLane(input: { itemId: string; toLane: LaneKey; fromLane?: LaneKey }) {
   await requireHardcodedSession();

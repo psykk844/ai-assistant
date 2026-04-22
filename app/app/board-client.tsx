@@ -966,27 +966,27 @@ function DetailPanel({
             Mark as reviewed
           </label>
 
-          <div className="flex flex-wrap gap-2">
-            <button type="submit" className="rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-black">
-              Save changes
-            </button>
-
-            <form action={updateItemStatus}>
-              <input type="hidden" name="itemId" value={item.id} />
-              <input type="hidden" name="status" value="completed" />
-              <button type="submit" className="rounded-md border border-[var(--border)] px-3 py-2 text-sm">
-                Complete
-              </button>
-            </form>
-
-            <form action={dismissItem}>
-              <input type="hidden" name="itemId" value={item.id} />
-              <button type="submit" className="rounded-md border border-rose-300/40 px-3 py-2 text-sm text-rose-200">
-                Move to trash
-              </button>
-            </form>
-          </div>
+          <button type="submit" className="rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-black">
+            Save changes
+          </button>
         </form>
+
+        <div className="mt-2 flex flex-wrap gap-2">
+          <form action={updateItemStatus}>
+            <input type="hidden" name="itemId" value={item.id} />
+            <input type="hidden" name="status" value="completed" />
+            <button type="submit" className="rounded-md border border-[var(--border)] px-3 py-2 text-sm">
+              Complete
+            </button>
+          </form>
+
+          <form action={dismissItem}>
+            <input type="hidden" name="itemId" value={item.id} />
+            <button type="submit" className="rounded-md border border-rose-300/40 px-3 py-2 text-sm text-rose-200">
+              Move to trash
+            </button>
+          </form>
+        </div>
 
         <section className="mt-6">
           <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--text-muted)]">AI-suggested actions</p>

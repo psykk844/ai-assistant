@@ -30,6 +30,9 @@ export function filterBoardItems(items: InboxItem[], activeFilter: FilterKey, ac
   const base = items.filter((item) => !isTrash(item));
 
   let filtered = base;
+  if (activeFilter === "all") {
+    filtered = base.filter((item) => item.status === "active");
+  }
   if (activeFilter === "active" || activeFilter === "completed" || activeFilter === "archived") {
     filtered = base.filter((item) => item.status === activeFilter);
   } else if (activeFilter === "todo" || activeFilter === "note" || activeFilter === "link") {

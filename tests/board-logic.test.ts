@@ -147,6 +147,41 @@ describe("board logic regressions", () => {
     expect(laneFromItem(item as never)).toBe("backlog");
   });
 
+  it("keeps completed items out of the all-board filter so they disappear from Today immediately", async () => {
+    const { filterBoardItems } = await import("../app/app/board-logic");
+
+    const items = [
+      {
+        id: "active-today",
+        title: "Active",
+        content: "still today",
+        type: "todo",
+        status: "active",
+        priority_score: 0.85,
+        confidence_score: 0.9,
+        needs_review: false,
+        created_at: new Date().toISOString(),
+        metadata: {},
+        tags: [],
+      },
+      {
+        id: "completed-now",
+        title: "Done",
+        content: "was today",
+        type: "todo",
+        status: "completed",
+        priority_score: 0.85,
+        confidence_score: 0.9,
+        needs_review: false,
+        created_at: new Date().toISOString(),
+        metadata: {},
+        tags: [],
+      },
+    ];
+
+    expect(filterBoardItems(items as never, "all", null).map((item) => item.id)).toEqual(["active-today"]);
+  });
+
   it("uses a dedicated drag handle class so action buttons remain clickable", async () => {
     const source = await import("node:fs/promises").then((fs) =>
       fs.readFile(resolve(process.cwd(), "app/app/board-client.tsx"), "utf8"),

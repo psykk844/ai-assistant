@@ -148,6 +148,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
   const [bulkTagInput, setBulkTagInput] = useState("");
   const [showBulkRetag, setShowBulkRetag] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const router = useRouter();
 
@@ -663,6 +664,12 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
               </div>
             </div>
 
+            {statusMessage && (
+              <div className="mb-3 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-100">
+                {statusMessage}
+              </div>
+            )}
+
             {activeFilter !== "trash" && (
               <div className="mb-2 flex items-center gap-2">
                 <form action={clearCompletedBacklog}>
@@ -694,6 +701,30 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                     lane={lane}
                     items={byLane[lane]}
                     onOpenItem={setSelectedItemId}
+                    onToggleStatus={(itemId, currentStatus) => {
+                      const nextStatus = currentStatus === "completed" ? "active" : "completed";
+
+                      setStatusMessage(nextStatus === "completed" ? "Item marked completed." : "Item reopened.");
+                      setItems((prev) =>
+                        prev.map((entry) =>
+                          entry.id === itemId
+                            ? {
+                                ...entry,
+                                status: nextStatus,
+                              }
+                            : entry,
+                        ),
+                      );
+
+                      startTransition(async () => {
+                        const formData = new FormData();
+                        formData.set("itemId", itemId);
+                        formData.set("status", nextStatus);
+
+                        await updateItemStatus(formData);
+                        router.refresh();
+                      });
+                    }}
                     pending={isPending}
                     selectedIds={selectedIds}
                     onToggleSelected={toggleSelected}
@@ -912,6 +943,7 @@ function LaneColumn({
   lane,
   items,
   onOpenItem,
+  onToggleStatus,
   pending,
   selectedIds,
   onToggleSelected,
@@ -920,6 +952,7 @@ function LaneColumn({
   lane: LaneKey;
   items: InboxItem[];
   onOpenItem: (itemId: string) => void;
+  onToggleStatus: (itemId: string, currentStatus: InboxItem["status"]) => void;
   pending: boolean;
   selectedIds: string[];
   onToggleSelected: (itemId: string) => void;
@@ -943,7 +976,7 @@ function LaneColumn({
         <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
           <ul className="space-y-3">
             {items.map((item, index) => (
-              <SortableCard key={item.id} item={item} onOpen={() => onOpenItem(item.id)} pending={pending} index={index} selected={selectedIds.includes(item.id)} onToggleSelected={() => onToggleSelected(item.id)} onTagSelect={onTagSelect} />
+              <SortableCard key={item.id} item={item} onOpen={() => onOpenItem(item.id)} onToggleStatus={onToggleStatus} pending={pending} index={index} selected={selectedIds.includes(item.id)} onToggleSelected={() => onToggleSelected(item.id)} onTagSelect={onTagSelect} />
             ))}
           </ul>
         </SortableContext>
@@ -955,6 +988,7 @@ function LaneColumn({
 function SortableCard({
   item,
   onOpen,
+  onToggleStatus,
   pending,
   index,
   selected,
@@ -963,6 +997,7 @@ function SortableCard({
 }: {
   item: InboxItem;
   onOpen: () => void;
+  onToggleStatus: (itemId: string, currentStatus: InboxItem["status"]) => void;
   pending: boolean;
   index: number;
   selected: boolean;
@@ -970,6 +1005,10 @@ function SortableCard({
   onTagSelect: (tag: string | null) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
+  const dragHandleProps = {
+    ...attributes,
+    ...listeners,
+  };
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -988,12 +1027,18 @@ function SortableCard({
     <li
       ref={setNodeRef}
       style={style}
-      className={`group card-enter rounded-lg border p-3 cursor-grab active:cursor-grabbing select-none ${selected ? "border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_10%,var(--bg-muted))]" : "border-[var(--border)] bg-[var(--bg-muted)]"}`}
-      aria-label={getDragHandleLabel(item)}
-      {...attributes}
-      {...listeners}
+      className={`group card-enter rounded-lg border p-3 select-none ${selected ? "border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_10%,var(--bg-muted))]" : "border-[var(--border)] bg-[var(--bg-muted)]"}`}
     >
       <div className="mb-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          aria-label={getDragHandleLabel(item)}
+          data-drag-handle
+          className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] cursor-grab active:cursor-grabbing hover:border-[var(--accent)]"
+          {...dragHandleProps}
+        >
+          Drag
+        </button>
         <label className="flex items-center gap-2 rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] opacity-70 transition group-hover:opacity-100">
           <input type="checkbox" checked={selected} onChange={onToggleSelected} onPointerDown={stopDrag} />
           Select
@@ -1032,17 +1077,15 @@ function SortableCard({
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <form action={updateItemStatus} onPointerDown={stopDrag}>
-          <input type="hidden" name="itemId" value={item.id} />
-          <input type="hidden" name="status" value={item.status === "completed" ? "active" : "completed"} />
-          <button
-            type="submit"
-            className="rounded-md border border-[var(--border)] px-2 py-1 text-xs transition hover:border-emerald-300/40 hover:text-emerald-200 disabled:opacity-70 active:scale-95 active:brightness-90 active:bg-green-700 dark:active:bg-green-800 transition-transform duration-75"
-            disabled={pending}
-          >
-            {item.status === "completed" ? "Reopen" : "Complete"}
-          </button>
-        </form>
+        <button
+          type="button"
+          onClick={() => onToggleStatus(item.id, item.status)}
+          onPointerDown={stopDrag}
+          className="rounded-md border border-[var(--border)] px-2 py-1 text-xs transition hover:border-emerald-300/40 hover:text-emerald-200 disabled:opacity-70 active:scale-95 active:brightness-90 active:bg-green-700 dark:active:bg-green-800 transition-transform duration-75"
+          disabled={pending}
+        >
+          {item.status === "completed" ? "Reopen" : "Complete"}
+        </button>
 
         <form action={dismissItem} onPointerDown={stopDrag}>
           <input type="hidden" name="itemId" value={item.id} />

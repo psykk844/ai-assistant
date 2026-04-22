@@ -21,7 +21,6 @@ describe("board logic regressions", () => {
     expect(isTrash(item as never)).toBe(true);
   });
 
-
   it("keeps trashed items available to the trash view instead of filtering them out during initial board load", () => {
     const item = {
       id: "trash-1",
@@ -126,5 +125,34 @@ describe("board logic regressions", () => {
 
     expect(normalizeItemTags({ id: "1", content: "x" } as { id: string; content: string; tags?: string[] | null })).toMatchObject({ tags: [] });
     expect(normalizeItemTags({ id: "2", content: "x", tags: ["work"] } as { id: string; content: string; tags?: string[] | null })).toMatchObject({ tags: ["work"] });
+  });
+
+  it("moves completed items out of active board lanes", async () => {
+    const { laneFromItem } = await import("../lib/items/lane");
+
+    const item = {
+      id: "done-1",
+      title: "Done",
+      content: "finished",
+      type: "todo",
+      status: "completed",
+      priority_score: 0.85,
+      confidence_score: 0.9,
+      needs_review: false,
+      created_at: new Date().toISOString(),
+      metadata: {},
+      tags: [],
+    };
+
+    expect(laneFromItem(item as never)).toBe("backlog");
+  });
+
+  it("uses a dedicated drag handle class so action buttons remain clickable", async () => {
+    const source = await import("node:fs/promises").then((fs) =>
+      fs.readFile(resolve(process.cwd(), "app/app/board-client.tsx"), "utf8"),
+    );
+
+    expect(source).toContain("data-drag-handle");
+    expect(source).not.toContain("cursor-grab active:cursor-grabbing select-none");
   });
 });

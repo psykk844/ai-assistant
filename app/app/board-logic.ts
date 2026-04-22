@@ -41,3 +41,10 @@ export function filterBoardItems(items: InboxItem[], activeFilter: FilterKey, ac
   if (!activeTagFilter) return filtered;
   return filtered.filter((item) => item.tags.includes(activeTagFilter));
 }
+
+export function normalizeItemTags<T extends { tags?: string[] | null }>(item: T) {
+  return {
+    ...item,
+    tags: Array.isArray(item.tags) ? item.tags : [],
+  };
+}

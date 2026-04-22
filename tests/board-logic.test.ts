@@ -120,4 +120,11 @@ describe("board logic regressions", () => {
 
     expect(filterBoardItems(items as never, "all", "work").map((item) => item.id)).toEqual(["1"]);
   });
+
+  it("normalizes rows without tags to an empty array", async () => {
+    const { normalizeItemTags } = await import("../app/app/board-logic");
+
+    expect(normalizeItemTags({ id: "1", content: "x" } as { id: string; content: string; tags?: string[] | null })).toMatchObject({ tags: [] });
+    expect(normalizeItemTags({ id: "2", content: "x", tags: ["work"] } as { id: string; content: string; tags?: string[] | null })).toMatchObject({ tags: ["work"] });
+  });
 });

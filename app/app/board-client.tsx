@@ -722,7 +722,8 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                         formData.set("status", nextStatus);
 
                         await updateItemStatus(formData);
-                        router.refresh();
+                        // Skip router.refresh() - causes race with optimistic update
+                        // Server state persists; UI syncs on next navigation
                       });
                     }}
                     pending={isPending}

@@ -1,296 +1,456 @@
-# 🧠 Smart Inbox — User Guide
+# User Guide (ELI5 Edition)
 
-> Your personal AI-powered brain dump. Toss in thoughts, tasks, and links — the app sorts them for you.
+This app is your **smart second brain inbox**.
 
----
+Think of it like this:
+- you throw thoughts, tasks, links, and notes into one box
+- the app helps sort them
+- you decide what matters now, later, or never
 
-## Table of Contents
-
-1. [Logging In](#1-logging-in)
-2. [The Big Picture — What You're Looking At](#2-the-big-picture--what-youre-looking-at)
-3. [Dumping Stuff Into Your Inbox](#3-dumping-stuff-into-your-inbox)
-4. [How the AI Sorts Your Stuff](#4-how-the-ai-sorts-your-stuff)
-5. [The Three Lanes — Today / Next Up / Backlog](#5-the-three-lanes--today--next-up--backlog)
-6. [What Each Item Card Shows You](#6-what-each-item-card-shows-you)
-7. [Doing Stuff With Items](#7-doing-stuff-with-items)
-8. [The Review Queue](#8-the-review-queue)
-9. [Quick Filters (the counters up top)](#9-quick-filters-the-counters-up-top)
-10. [Signing Out](#10-signing-out)
+If you can use notes, a to-do list, and search, you can use this app.
 
 ---
 
-## 1. Logging In
+## 1. What this app does
 
-When you open the app, you'll see a dark login screen.
+The app helps you:
+- capture ideas fast
+- turn messy thoughts into structured items
+- sort work into **Today**, **Next Up**, and **Backlog**
+- search across what you saved
+- ask AI questions about your saved info
+- move old stuff to trash instead of losing it forever right away
+- sync notes into your Obsidian vault
 
-| Field    | What to type |
-|----------|-------------|
-| Username | `sam`       |
-| Password | `page`      |
+### The 3 main item types
 
-Click **Sign in**. That's it — you're in.
+When you add something, the AI usually classifies it as one of these:
 
-> The button will say "Working..." for a second while it logs you in. If you type the wrong password, it'll show "Invalid credentials" in red.
-
-Your login lasts **24 hours**. After that, you'll just need to sign in again.
-
----
-
-## 2. The Big Picture — What You're Looking At
-
-Once you're logged in, the screen is split into **three columns**:
-
-```
-┌──────────────┬─────────────────────────────────┬──────────────────┐
-│              │                                 │                  │
-│   LEFT       │         CENTER                  │    RIGHT         │
-│   Sidebar    │         (Main Area)             │    Sidebar       │
-│              │                                 │                  │
-│  Your stats  │  Inbox box + your items         │  Your session    │
-│  at a glance │  sorted into lanes              │  + review queue  │
-│              │                                 │                  │
-└──────────────┴─────────────────────────────────┴──────────────────┘
-```
-
-### Left Sidebar — Your Stats
-
-Four little boxes that show counts at a glance:
-
-- **Today** — how many things are high priority and need attention now
-- **Next Up** — medium priority stuff coming up soon
-- **Backlog** — everything else (lower priority, completed, or archived)
-- **Review** — items the AI wasn't sure about (it's asking you to double-check)
-
-### Center — Where the Action Happens
-
-This is where you dump stuff in, and where all your items live sorted into lanes.
-
-### Right Sidebar — Session & Review
-
-Shows who's logged in (you!) with a sign-out button, plus a quick-glance list of items that need your review.
+- **Note** = information you want to keep
+- **Todo** = something you should do
+- **Link** = a URL or resource to revisit
 
 ---
 
-## 3. Dumping Stuff Into Your Inbox
+## 2. The main screen, explained like you're 5
 
-Right at the top of the center area, you'll see a big text box that says:
+When you open the app, you’ll usually see 3 big zones:
 
-> *"Drop a thought, task, or URL...*
-> *Separate multiple items with a blank line."*
+### Left side: workspace / lane controls
+This shows your 3 focus lanes:
+- **Today** → important right now
+- **Next Up** → soon, but not right this second
+- **Backlog** → later / lower priority
 
-This is your **inbox composer**. Here's how to use it:
+You can click a lane button to focus on just that lane.
 
-1. **Click the text box** and type literally anything:
-   - A random thought: `"The sky looked amazing today"`
-   - A task: `"Need to buy groceries tomorrow"`
-   - A link: `"https://cool-article.com/something-neat"`
-   - A question: `"Should I switch to a standing desk?"`
+### Middle: capture + board
+This is where you:
+- type in new stuff
+- search
+- use filters
+- view your cards in lanes
+- drag cards between lanes
 
-2. **Click "Add to inbox"**
-
-3. The button changes to **"Classifying..."** for a moment — that's the AI figuring out what you just typed.
-
-4. **Done!** Your item appears in one of the three lanes below.
-
-> **Think of it like texting your future self.** Just brain-dump whatever's on your mind. The AI handles the rest.
-
-### Bulk Adding — Multiple Items at Once
-
-You can add **several items in one go**. Just put a **blank line** between each one:
-
-```
-Buy groceries tomorrow
-
-Remember to call the dentist
-
-https://cool-article.com/something-neat
-This article was really interesting
-
-The sky looked amazing today
-```
-
-That becomes **4 separate items**, each classified on its own:
-
-| Chunk | AI reads it as |
-|-------|---------------|
-| `Buy groceries tomorrow` | ✅ Todo |
-| `Remember to call the dentist` | ✅ Todo |
-| `https://cool-article.com/...` + next line | 🔗 Link |
-| `The sky looked amazing today` | 📝 Note |
-
-**How it works:**
-- A **blank line** (hit Enter twice) tells the app: *"that's where one item ends and the next one begins."*
-- Lines that are right next to each other (single Enter) stay **together** as one item — handy for a link + its description.
-- The button live-updates to show **"Add 4 items"** so you can see how many it detected before you submit.
-- While saving, it shows **"Classifying 4 items..."** — all items are classified in parallel so it's fast.
-- If you only type one thing with no blank lines, it works exactly like before — just one item.
+### Right side: helper sidebar
+This is where you can switch between:
+- **Review** → low-confidence items the AI wants you to check
+- **AI chat** → ask questions about your saved stuff
+- **Trash** → restore or permanently delete trashed items
 
 ---
 
-## 4. How the AI Sorts Your Stuff
+## 3. How to add something
 
-When you add something, the AI looks at what you typed and makes three decisions:
+At the top is the **Smart Inbox** composer.
 
-### What type is it?
+Type anything, such as:
+- “email Sarah about the demo”
+- “book dentist appointment next week”
+- “https://example.com/article-about-focus”
+- “idea: build a tiny widget for quick capture”
 
-| Type | How the AI decides | Badge color |
-|------|-------------------|-------------|
-| **📝 Note** | General thoughts, observations, ideas | Green |
-| **✅ Todo** | Starts with "need to," "remember to," "should," "must," or has a "?" | Blue |
-| **🔗 Link** | Contains a URL (like `https://...`) | Purple |
+Then submit it.
 
-### How important is it?
+### Good news
+You do **not** have to perfectly format your thoughts.
+The app is designed for messy input.
 
-The AI gives each item a **priority score** from 0–100%. Higher = more urgent. This decides which lane it goes into (more on that below).
+### You can also paste multiple things at once
+The app can split entries when you separate them by:
+- blank lines
+- short single-line entries
+- commas / semicolons in some simple cases
 
-### How confident is the AI?
-
-The AI also gives itself a **confidence score**. If it's below 75%, the item gets flagged for your review (a little amber "review" badge appears). This is the AI saying *"Hey, I wasn't super sure about this one — mind double-checking?"*
-
----
-
-## 5. The Three Lanes — Today / Next Up / Backlog
-
-Your items automatically sort into three lanes based on priority:
-
-```
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│    🔴 TODAY      │  │   🟡 NEXT UP     │  │   ⚪ BACKLOG     │
-│                 │  │                 │  │                 │
-│  Priority 80%+  │  │  Priority 60-79% │  │  Everything else │
-│                 │  │                 │  │  + completed     │
-│  "Do this now"  │  │  "Do this soon"  │  │  + archived      │
-└─────────────────┘  └─────────────────┘  └─────────────────┘
-```
-
-- **Today** = High priority (80%+). The AI thinks these need your attention right now.
-- **Next Up** = Medium priority (60–79%). Important but not urgent.
-- **Backlog** = Everything else — low priority stuff, completed tasks, and archived items all live here.
-
-Each lane header shows how many items are in it, like **"Today (3)"**.
-
-If a lane is empty, it just says *"No items in this lane."*
+So you can paste a small brain dump, not just one item.
 
 ---
 
-## 6. What Each Item Card Shows You
+## 4. What happens after you add something
 
-Every item in a lane looks like a small card. Here's what's on it:
+The AI tries to help by doing a first pass.
 
-```
-┌─────────────────────────────────────────────┐
-│  [todo]  [today]  [review]    P85 · C92     │
-│                                             │
-│  Buy groceries tomorrow                     │
-│  Need to buy groceries tomorrow, especially │
-│  milk and eggs...                           │
-│                                             │
-│  [Complete]  [Archive]  [Mark reviewed]     │
-└─────────────────────────────────────────────┘
-```
+It may decide:
+- what **type** the item is
+- what **title** it should have
+- how important it seems
+- whether it needs human review
 
-Breaking that down:
+### Priority lanes
+Items are placed roughly like this:
+- **Today** = highest priority
+- **Next Up** = medium priority
+- **Backlog** = lower priority
 
-| Part | What it means |
-|------|--------------|
-| **Type badge** (blue/purple/green) | Whether it's a todo, link, or note |
-| **Lane badge** | Which lane it's in (today / next up / backlog) |
-| **Review badge** (amber) | Only shows if the AI wants you to check this one |
-| **P85** | Priority score — 85% important |
-| **C92** | Confidence score — the AI is 92% sure it categorized this right |
-| **Title** (bold) | A short title (auto-generated from what you typed) |
-| **Content preview** | First couple lines of what you typed |
-| **Action buttons** | Things you can do with this item (see below) |
+You are still in control.
+If the app guesses wrong, you can open the item and edit it.
 
 ---
 
-## 7. Doing Stuff With Items
+## 5. Understanding the cards
 
-Each item card has buttons at the bottom. Which buttons you see depends on the item's current status:
+Each saved thing becomes a **card**.
 
-### ✅ Complete
+A card usually shows:
+- the item type (note / todo / link)
+- the lane it currently lives in
+- whether it needs review
+- the title
+- a preview of the content
+- action buttons
 
-*"I did this!"*
-
-Click **Complete** to mark a task as done. The button shows "Completing..." briefly. The item moves to the Backlog lane (since it's no longer active).
-
-### 🔄 Reopen
-
-*"Wait, I'm not done with this after all."*
-
-Shows up on completed or archived items. Click **Reopen** to bring it back to active status. It'll pop back into whichever lane matches its priority.
-
-### 📦 Archive
-
-*"I don't need this anymore, but don't delete it."*
-
-Click **Archive** to tuck it away. It moves to Backlog. You can always reopen it later.
-
-### 👁️ Mark Reviewed
-
-*"I checked this and the AI got it right."*
-
-Only shows up on items with the amber "review" badge. Click it to clear the review flag. This tells the system you're happy with how the AI categorized it.
-
-> **All actions give you a little loading state** (the button text changes to "Completing..." or "Archiving..." etc.) so you know it's working.
+### Common card actions
+- **Open** → see full item details
+- **Complete** → mark finished
+- **Reopen** → un-finish a completed item
+- **Move to trash** → send it to Trash
 
 ---
 
-## 8. The Review Queue
+## 6. Drag and drop
 
-On the **right sidebar**, below your session info, there's a **Review Queue** panel.
+You can drag cards between lanes.
 
-This shows up to **8 items** that the AI wasn't confident about (confidence below 75%).
+Example:
+- drag a card into **Today** if it matters now
+- drag a card into **Backlog** if it can wait
 
-Each item in the review queue shows:
-- The item title
-- A 2-line preview of the content
-- An amber/gold highlight so it stands out
+This is a fast way to re-prioritize.
 
-> **Think of it as the AI raising its hand and saying:** *"Hey, I sorted these but I'm not 100% sure I got them right. Want to take a look?"*
+### What dragging means
+Dragging changes the item’s priority behind the scenes.
+It is basically you saying:
+- “do this now”
+- “do this soon”
+- “do this later”
 
-To handle review items, find them in the main lanes and click **"Mark reviewed"** to clear the flag.
-
-When all reviews are handled, the panel says: *"No low-confidence items pending review."*
-
----
-
-## 9. Quick Filters (the Counters Up Top)
-
-Just above the three lanes, you'll see a row of **6 filter chips** that show counts:
-
-| Chip | What it counts |
-|------|---------------|
-| **Active** | Items you're still working with |
-| **Completed** | Items you've marked done |
-| **Archived** | Items you've put away |
-| **Links** | All items that are URLs/links |
-| **Todos** | All items that are tasks |
-| **Notes** | All items that are general thoughts |
-
-> These are **display-only counters** — they give you a quick snapshot of what's in your inbox at a glance. Think of them as a mini dashboard.
+### Tip
+Try dragging from the main body of the card if there are lots of small buttons nearby.
 
 ---
 
-## 10. Signing Out
+## 7. Opening an item and editing it
 
-In the **right sidebar** at the top, you'll see:
+Click **Open** (or click into the item area) to open the detail panel.
 
-- Your username (**sam**)
-- A **Sign out** button
+Inside the detail panel, you can edit:
+- **Title**
+- **Content**
+- **Type**
+- **Lane**
+- **Reviewed state**
 
-Click it and you're logged out. You'll be sent back to the login screen.
+You can also:
+- save changes
+- complete the item
+- move it to trash
+- create AI-suggested follow-up subtasks
+
+### Related items
+The detail panel can also show related results, so you can discover nearby notes or tasks.
 
 ---
 
-## Quick Reference — The 30-Second Version
+## 8. Review queue
 
-1. **Log in** with `sam` / `page`
-2. **Type anything** into the big text box and hit "Add to inbox"
-   - Add multiple items at once by separating them with **blank lines**
-3. The AI **auto-sorts** it into Today, Next Up, or Backlog
-4. **Complete** tasks when done, **Archive** stuff you don't need
-5. Check the **Review Queue** when the AI isn't sure about something
-6. **Sign out** when you're done
+Sometimes the AI is not very confident.
+When that happens, the item may be flagged for review.
 
-That's literally it. Brain dump → AI sorts → you act on it. 🎯
+You’ll see these in the **Review** tab on the right side.
+
+Use this when you want to quickly clean up uncertain items.
+
+Typical reasons an item may need review:
+- the type is unclear
+- the priority is unclear
+- the text is vague
+- the AI thinks a human should double-check it
+
+### What to do
+- open the item
+- fix anything wrong
+- mark it reviewed
+
+---
+
+## 9. Search
+
+There is a search box in the app.
+
+Use it to find things you already saved.
+
+Example searches:
+- “meeting notes”
+- “dentist”
+- “focus article”
+- part of a sentence you remember
+
+This is helpful when you remember the idea but not where you put it.
+
+---
+
+## 10. AI chat
+
+The **AI chat** tab lets you ask questions across your saved knowledge.
+
+Example questions:
+- “What notes do I have about focus?”
+- “Summarize everything about the product launch.”
+- “What tasks mention onboarding?”
+- “Turn this answer into a note.”
+
+### Nice feature
+After the AI answers, you can click **Convert to note** to save the answer back into your system.
+
+So chat is not just for reading — it can also help you create new knowledge.
+
+---
+
+## 11. Trash
+
+Trash is for things you removed, but might still want back.
+
+### When you move something to trash
+It:
+- disappears from the main board
+- appears in the **Trash** section
+- stays there for up to **30 days**
+
+### In Trash, you can:
+- **Restore** → bring it back
+- **Delete forever** → remove it permanently
+
+### Auto-delete
+Trash items are set to auto-purge after 30 days.
+There is also a button to purge old trash manually.
+
+Think of Trash like the recycling bin on your computer.
+
+---
+
+## 12. Completed items
+
+Completed items are not the same thing as trashed items.
+
+### Complete means:
+- “I finished this”
+
+### Trash means:
+- “I don’t want this on the board anymore”
+
+That distinction matters:
+- completed items are still part of your history
+- trashed items are on the path toward deletion
+
+---
+
+## 13. Filters
+
+The board has filters to help you narrow what you see.
+
+Depending on the filter, you can focus on things like:
+- all items
+- active items
+- completed items
+- archived items
+- notes only
+- todos only
+- links only
+- trash
+
+Use filters when the board feels too busy.
+
+---
+
+## 14. Full-lane focus mode
+
+If you want less clutter, click a lane on the left sidebar.
+This lets you focus on only one lane at a time.
+
+That is useful when you want to:
+- plan today
+- review only backlog
+- avoid visual overload
+
+Press the same lane again to exit focused mode.
+
+---
+
+## 15. Keyboard shortcuts
+
+The app has a few keyboard shortcuts:
+
+- **1** → focus Today
+- **2** → focus Next Up
+- **3** → focus Backlog
+- **n** → jump to the capture box
+- **Esc** → close a panel or exit lane focus
+- **?** → show shortcut help
+
+These are optional, but once learned, they make the app feel much faster.
+
+---
+
+## 16. Theme toggle
+
+You can switch between:
+- **Dark mode**
+- **Light mode**
+
+Use whichever is easier on your eyes.
+The app remembers your choice with a cookie.
+
+---
+
+## 17. Sync vault
+
+There is a **Sync vault** button.
+
+This is for syncing your saved items with the connected vault / Obsidian-side knowledge setup.
+
+In plain English:
+- the app stores your structured items
+- sync pushes or refreshes vault-side knowledge files
+- this helps your knowledge stay usable outside just the app UI
+
+If sync works, you’ll see a status update.
+If it fails, the app will say sync failed.
+
+---
+
+## 18. Widget
+
+There is also a `/widget` view.
+
+This is meant to be a lighter, quicker companion surface.
+It is useful for fast access and quick capture.
+
+The app even hints that you can pin it with PowerToys on Windows.
+
+So if you want faster capture than opening the full app, the widget is there for that.
+
+---
+
+## 19. AI-suggested actions
+
+Inside an item’s detail panel, the app may show suggested next steps like:
+- break this down
+- research this
+- set a deadline
+
+These are there to help you turn vague thoughts into concrete next actions.
+
+You do not have to use them, but they are handy when your note is too broad.
+
+---
+
+## 20. Typical ways to use the app
+
+### A. Quick capture system
+Use it like a brain dump bucket:
+1. throw in thoughts all day
+2. let AI sort them
+3. review later
+4. drag the important ones into Today
+
+### B. Task manager lite
+Use it as a prioritization board:
+1. capture todos
+2. complete what’s done
+3. move irrelevant stuff to trash
+4. use Today / Next Up / Backlog to stay realistic
+
+### C. Personal knowledge inbox
+Use it for notes + links:
+1. save ideas and articles
+2. search when needed
+3. ask AI questions across saved content
+4. sync to vault for long-term knowledge storage
+
+---
+
+## 21. If something feels wrong
+
+Here’s the simplest mental model:
+
+- Can’t find it on the board? → check **filters**
+- Still can’t find it? → check **Trash**
+- AI guessed wrong? → **Open** the item and edit it
+- Too many items? → use **search** or focus one lane
+- Not sure what a card means? → open it and read the full details
+
+---
+
+## 22. Best practices
+
+If you want the app to feel magical, do this:
+
+- capture things quickly instead of overthinking formatting
+- review low-confidence items regularly
+- drag items into the right lane instead of letting Today get crowded
+- use Trash instead of instant permanent deletion
+- use search before rewriting something from scratch
+- use AI chat when you remember the topic but not the exact wording
+
+---
+
+## 23. Super short cheat sheet
+
+### Add stuff
+Use the Smart Inbox.
+
+### Change priority
+Drag cards between Today / Next Up / Backlog.
+
+### Edit details
+Open the item.
+
+### Finished?
+Click **Complete**.
+
+### Don’t want it?
+Click **Move to trash**.
+
+### Want it back?
+Open **Trash** and click **Restore**.
+
+### Need to find something?
+Use **Search**.
+
+### Want AI help?
+Use **AI chat**.
+
+### Want less clutter?
+Use filters or focus a lane.
+
+---
+
+## 24. Final mental model
+
+This app is not just a note app.
+It is not just a to-do list.
+It is not just AI chat.
+
+It is a **capture → sort → review → act → remember** system.
+
+That’s the whole idea.

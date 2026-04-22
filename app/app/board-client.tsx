@@ -34,7 +34,8 @@ import {
   updateItemStatus,
 } from "./actions";
 import { laneFromItem, type LaneKey } from "@/lib/items/lane";
-import type { InboxItem, ItemMetadata } from "@/lib/items/types";
+import type { InboxItem } from "@/lib/items/types";
+import { asMetadata, getDragActivationDistance, getDragHandleLabel, isTrash } from "./board-logic";
 
 type AppBoardProps = {
   initialItems: InboxItem[];
@@ -109,15 +110,6 @@ function getSuggestions(item: InboxItem): string[] {
   ];
 }
 
-function asMetadata(metadata: InboxItem["metadata"]): ItemMetadata {
-  if (!metadata || typeof metadata !== "object") return {};
-  return metadata;
-}
-
-function isTrash(item: InboxItem) {
-  const metadata = asMetadata(item.metadata);
-  return item.status === "archived" && typeof metadata.deleted_at === "string";
-}
 
 function daysUntilPurge(item: InboxItem) {
   const metadata = asMetadata(item.metadata);
@@ -150,7 +142,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
+      activationConstraint: { distance: getDragActivationDistance() },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -788,45 +780,50 @@ function SortableCard({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.6 : 1,
+    opacity: isDragging ? 0.5 : 1,
     animationDelay: `${index * 36}ms`,
+    touchAction: "none",
   };
 
   const lane = laneFromItem(item);
+
+  /* Stop pointer events on interactive children from reaching the drag listener */
+  const stopDrag = (e: React.PointerEvent) => e.stopPropagation();
 
   return (
     <li
       ref={setNodeRef}
       style={style}
+      className="card-enter rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] p-3 cursor-grab active:cursor-grabbing select-none"
+      aria-label={getDragHandleLabel(item)}
       {...attributes}
       {...listeners}
-      className="card-enter rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] p-3"
     >
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <button type="button" className={`rounded-md border px-2 py-0.5 text-xs font-mono uppercase ${typeStyles(item.type)}`} onClick={onOpen}>
+        <span className={`rounded-md border px-2 py-0.5 text-xs font-mono uppercase ${typeStyles(item.type)}`}>
           {item.type}
-        </button>
+        </span>
         <span className="rounded-md border border-[var(--border)] px-2 py-0.5 text-xs font-mono uppercase text-[var(--text-muted)]">{lane}</span>
         {item.needs_review && (
           <span className="rounded-md border border-amber-300/30 bg-amber-300/15 px-2 py-0.5 text-xs font-mono uppercase text-amber-200">
             review
           </span>
         )}
-        <button type="button" onClick={onOpen} className="ml-auto text-xs text-[var(--text-muted)] hover:text-[var(--text)]">
+        <button type="button" onClick={onOpen} onPointerDown={stopDrag} className="ml-auto text-xs text-[var(--text-muted)] hover:text-[var(--text)]">
           Open
         </button>
       </div>
 
-      <button type="button" onClick={onOpen} className="w-full text-left">
+      <div onClick={onOpen} className="w-full text-left cursor-pointer">
         <p className="text-sm font-medium">{item.title || "Untitled"}</p>
         <p className="mt-1 line-clamp-2 text-sm text-[var(--text-muted)]">{item.content}</p>
-      </button>
+      </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <form action={updateItemStatus}>
+        <form action={updateItemStatus} onPointerDown={stopDrag}>
           <input type="hidden" name="itemId" value={item.id} />
           <input type="hidden" name="status" value={item.status === "completed" ? "active" : "completed"} />
           <button
@@ -838,7 +835,7 @@ function SortableCard({
           </button>
         </form>
 
-        <form action={dismissItem}>
+        <form action={dismissItem} onPointerDown={stopDrag}>
           <input type="hidden" name="itemId" value={item.id} />
           <button
             type="submit"

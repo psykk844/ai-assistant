@@ -127,6 +127,18 @@ describe("board logic regressions", () => {
     expect(normalizeItemTags({ id: "2", content: "x", tags: ["work"] } as { id: string; content: string; tags?: string[] | null })).toMatchObject({ tags: ["work"] });
   });
 
+  it("falls back to metadata tags when the tags column is unavailable", async () => {
+    const { normalizeItemTags } = await import("../app/app/board-logic");
+
+    expect(
+      normalizeItemTags({
+        id: "3",
+        content: "x",
+        metadata: { tags: ["work", "AI"] },
+      } as { id: string; content: string; metadata?: Record<string, unknown>; tags?: string[] | null }),
+    ).toMatchObject({ tags: ["work", "ai"] });
+  });
+
   it("moves completed items out of active board lanes", async () => {
     const { laneFromItem } = await import("../lib/items/lane");
 

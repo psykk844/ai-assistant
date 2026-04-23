@@ -1,4 +1,5 @@
 import type { InboxItem, ItemMetadata } from "@/lib/items/types";
+import { readItemTags } from "./item-tags";
 
 type FilterKey = "all" | "active" | "completed" | "archived" | "todo" | "note" | "link" | "trash";
 
@@ -50,6 +51,6 @@ export function filterBoardItems(items: InboxItem[], activeFilter: FilterKey, ac
 export function normalizeItemTags<T extends { tags?: string[] | null }>(item: T) {
   return {
     ...item,
-    tags: Array.isArray(item.tags) ? item.tags : [],
+    tags: readItemTags(item as T & { metadata?: Record<string, unknown> }),
   };
 }

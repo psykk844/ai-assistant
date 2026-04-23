@@ -9,6 +9,7 @@ import { resolveSessionUserId } from "@/lib/auth/session-user";
 import { laneToPriority, type LaneKey } from "@/lib/items/lane";
 import { indexItemsInVectorStore } from "@/lib/items/embeddings";
 import { mirrorItemToObsidian, removeMirroredFileFromMetadata } from "@/lib/obsidian/mirror";
+import { readItemTags, withStoredTags } from "./item-tags";
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -138,7 +139,7 @@ export async function captureInboxItem(formData: FormData) {
   const { data, error } = await supabase
     .from("items")
     .insert(rows)
-      .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata,tags");
+    .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata");
 
   if (error) throw new Error(`Failed to save inbox items: ${error.message}`);
 
@@ -228,7 +229,7 @@ export async function updateItemStatus(formData: FormData) {
       .update(payload)
       .eq("id", itemId)
       .eq("user_id", userId)
-      .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata,tags")
+      .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata")
       .single();
 
     if (error) {
@@ -328,76 +329,113 @@ export async function updateItemStatus(formData: FormData) {
 
 
 export async function moveItemToLane(input: { itemId: string; toLane: LaneKey; fromLane?: LaneKey }) {
-  await requireHardcodedSession();
-
   const itemId = String(input.itemId ?? "").trim();
   const toLane = input.toLane;
   const fromLane = input.fromLane;
   if (!itemId || !toLane) return;
 
-  const supabase = createAdminClient();
-  const userId = await resolveSessionUserId();
+  try {
+    await requireHardcodedSession();
 
-  const { data: existing } = await supabase
-    .from("items")
-    .select("metadata")
-    .eq("id", itemId)
-    .eq("user_id", userId)
-    .single();
+    const supabase = createAdminClient();
+    const userId = await resolveSessionUserId();
 
-  const metadata = withoutTrashFlags(asMetadata(existing?.metadata));
+    const { data: existing } = await supabase
+      .from("items")
+      .select("metadata")
+      .eq("id", itemId)
+      .eq("user_id", userId)
+      .single();
 
-  const nextPriority = laneToPriority(toLane);
+    const metadata = withoutTrashFlags(asMetadata(existing?.metadata));
+    const nextPriority = laneToPriority(toLane);
 
-  const { data: movedItem, error } = await supabase
-    .from("items")
-    .update({
-      status: "active",
-      priority_score: nextPriority,
-      metadata,
-    })
-    .eq("id", itemId)
-    .eq("user_id", userId)
-    .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata")
-    .single();
+    const { data: movedItem, error } = await supabase
+      .from("items")
+      .update({
+        status: "active",
+        priority_score: nextPriority,
+        metadata,
+      })
+      .eq("id", itemId)
+      .eq("user_id", userId)
+      .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata")
+      .single();
 
-  if (error) throw new Error(`Failed to move item: ${error.message}`);
+    if (error) throw new Error(`Failed to move item: ${error.message}`);
 
-  if (movedItem) {
-    const mirrored = await mirrorItemToObsidian(movedItem as {
-      id: string;
-      user_id: string;
-      title: string | null;
-      content: string;
-      type: "todo" | "note" | "link";
-      status: "active" | "completed" | "archived";
-      priority_score: number;
-      confidence_score: number | null;
-      needs_review: boolean;
-      created_at: string;
-      updated_at?: string;
-      metadata?: Record<string, unknown>;
-    });
-    if (mirrored) {
-      const metadataNext = asMetadata((movedItem as { metadata?: Record<string, unknown> }).metadata);
-      await supabase
-        .from("items")
-        .update({ metadata: { ...metadataNext, obsidian_path: mirrored.obsidianPath } })
-        .eq("id", itemId)
-        .eq("user_id", userId);
+    if (movedItem) {
+      try {
+        const mirrored = await mirrorItemToObsidian(movedItem as {
+          id: string;
+          user_id: string;
+          title: string | null;
+          content: string;
+          type: "todo" | "note" | "link";
+          status: "active" | "completed" | "archived";
+          priority_score: number;
+          confidence_score: number | null;
+          needs_review: boolean;
+          created_at: string;
+          updated_at?: string;
+          metadata?: Record<string, unknown>;
+        });
+        if (mirrored) {
+          const metadataNext = asMetadata((movedItem as { metadata?: Record<string, unknown> }).metadata);
+          await supabase
+            .from("items")
+            .update({ metadata: { ...metadataNext, obsidian_path: mirrored.obsidianPath } })
+            .eq("id", itemId)
+            .eq("user_id", userId);
+        }
+      } catch (mirrorError) {
+        console.error("Failed to mirror moved item to Obsidian", { itemId, toLane, mirrorError });
+        await persistServerActionError("moveItemToLane:mirror", {
+          itemId,
+          toLane,
+          error: serializeError(mirrorError),
+        });
+      }
     }
+
+    try {
+      await supabase.from("interactions").insert({
+        user_id: userId,
+        item_id: itemId,
+        action: "reordered",
+        from_status: fromLane ?? "unknown",
+        to_status: toLane,
+      });
+    } catch (interactionError) {
+      console.error("Failed to log lane move interaction", { itemId, fromLane, toLane, interactionError });
+      await persistServerActionError("moveItemToLane:interaction", {
+        itemId,
+        fromLane,
+        toLane,
+        error: serializeError(interactionError),
+      });
+    }
+
+    try {
+      revalidatePath("/app");
+      revalidatePath("/widget");
+    } catch (revalidateError) {
+      console.error("Failed to revalidate after lane move", { itemId, toLane, revalidateError });
+      await persistServerActionError("moveItemToLane:revalidate", {
+        itemId,
+        toLane,
+        error: serializeError(revalidateError),
+      });
+    }
+  } catch (error) {
+    console.error("Unhandled error in moveItemToLane", { itemId, toLane, error });
+    await persistServerActionError("moveItemToLane:unhandled", {
+      itemId,
+      toLane,
+      error: serializeError(error),
+    });
+    throw error;
   }
-
-  await supabase.from("interactions").insert({
-    user_id: userId,
-    item_id: itemId,
-    action: "reordered",
-    from_status: fromLane ?? "unknown",
-    to_status: toLane,
-  });
-
-  revalidatePath("/app");
-  revalidatePath("/widget");
 }
 
 export async function updateItemDetails(formData: FormData) {
@@ -428,10 +466,9 @@ export async function updateItemDetails(formData: FormData) {
     title: title || null,
     content,
     type,
-    tags,
     priority_score: laneToPriority(lane),
     status: "active",
-    metadata: withoutTrashFlags(asMetadata(existing?.metadata)),
+    metadata: withStoredTags(withoutTrashFlags(asMetadata(existing?.metadata)), tags),
   };
 
   if (markReviewed) payload.needs_review = false;
@@ -441,7 +478,7 @@ export async function updateItemDetails(formData: FormData) {
     .update(payload)
     .eq("id", itemId)
     .eq("user_id", userId)
-     .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata,tags")
+    .select("id,user_id,title,content,type,status,priority_score,confidence_score,needs_review,created_at,updated_at,metadata")
     .single();
 
   if (error) throw new Error(`Failed to update item details: ${error.message}`);
@@ -832,7 +869,7 @@ export async function bulkUpdateItems(itemIds: string[], updates: BulkUpdateInpu
 
   const { data: existing, error: loadError } = await supabase
     .from("items")
-    .select("id,metadata,tags")
+    .select("id,metadata")
     .eq("user_id", userId)
     .in("id", ids);
 
@@ -846,16 +883,19 @@ export async function bulkUpdateItems(itemIds: string[], updates: BulkUpdateInpu
       if (typeof updates.priority_score === "number") payload.priority_score = updates.priority_score;
       if (updates.markReviewed) payload.needs_review = false;
 
+      const baseMetadata = asMetadata(row.metadata);
+      let nextMetadata = updates.metadata_patch
+        ? {
+            ...baseMetadata,
+            ...updates.metadata_patch,
+          }
+        : baseMetadata;
+
       if (normalizedTags.length > 0) {
-        payload.tags = normalizeTags([...(row.tags ?? []), ...normalizedTags]);
+        nextMetadata = withStoredTags(nextMetadata, normalizeTags([...readItemTags(row), ...normalizedTags]));
       }
 
-      if (updates.metadata_patch) {
-        payload.metadata = {
-          ...asMetadata(row.metadata),
-          ...updates.metadata_patch,
-        };
-      }
+      if (updates.metadata_patch || normalizedTags.length > 0) payload.metadata = nextMetadata;
 
       const { error } = await supabase
         .from("items")

@@ -1225,6 +1225,7 @@ function PushToggle() {
     return localStorage.getItem("push-enabled") === "true";
   });
   const [isPending, setIsPending] = useState(false);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   // Convert URL-safe base64 VAPID key to Uint8Array for pushManager.subscribe
   const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
@@ -1240,30 +1241,51 @@ function PushToggle() {
 
   const toggle = async () => {
     setIsPending(true);
+    setStatusMsg(null);
     try {
       if (!enabled) {
+        // Check if push is supported
+        if (!("Notification" in window)) {
+          setStatusMsg("Notifications not supported");
+          setIsPending(false);
+          return;
+        }
+        if (!("serviceWorker" in navigator)) {
+          setStatusMsg("Service workers not supported");
+          setIsPending(false);
+          return;
+        }
+        if (window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
+          setStatusMsg("Requires HTTPS");
+          setIsPending(false);
+          return;
+        }
+
         // Step 1: Request notification permission
+        setStatusMsg("Requesting permission...");
         const permission = await Notification.requestPermission();
         if (permission !== "granted") {
-          console.warn("[push] Permission denied:", permission);
+          setStatusMsg("Permission " + permission);
           setIsPending(false);
           return;
         }
 
         // Step 2: Get service worker registration
+        setStatusMsg("Registering...");
         const reg = await navigator.serviceWorker.ready;
 
-        // Step 3: Get VAPID public key from API (env var not available in static HTML)
+        // Step 3: Get VAPID public key from API
         const vapidRes = await fetch("/api/push/vapid-key");
         const vapidData = await vapidRes.json();
         const vapidKey = vapidData.key;
         if (!vapidKey) {
-          console.error("[push] VAPID public key not configured on server");
+          setStatusMsg("VAPID key missing");
           setIsPending(false);
           return;
         }
 
-        // Step 4: Subscribe to push with properly encoded key
+        // Step 4: Subscribe to push
+        setStatusMsg("Subscribing...");
         const sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
@@ -1281,13 +1303,15 @@ function PushToggle() {
         });
 
         if (!res.ok) {
-          console.error("[push] Subscribe API failed:", await res.text());
+          setStatusMsg("Server error");
           setIsPending(false);
           return;
         }
 
         localStorage.setItem("push-enabled", "true");
         setEnabled(true);
+        setStatusMsg("Enabled!");
+        setTimeout(() => setStatusMsg(null), 2000);
       } else {
         // Disable push
         const reg = await navigator.serviceWorker.ready;
@@ -1302,24 +1326,30 @@ function PushToggle() {
         }
         localStorage.setItem("push-enabled", "false");
         setEnabled(false);
+        setStatusMsg("Disabled");
+        setTimeout(() => setStatusMsg(null), 2000);
       }
     } catch (err) {
       console.error("[push] Toggle error:", err);
+      setStatusMsg(String(err instanceof Error ? err.message : "Error"));
     }
     setIsPending(false);
   };
 
-  if (typeof window !== "undefined" && !("Notification" in window)) return null;
-
   return (
-    <button
-      onClick={toggle}
-      disabled={isPending}
-      className="mt-2 flex items-center gap-2 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-xs text-[var(--text-muted)] hover:border-[var(--accent)] transition-colors"
-    >
-      <span>{enabled ? "🔔" : "🔕"}</span>
-      <span>{enabled ? "Notifications on" : "Enable notifications"}</span>
-    </button>
+    <div className="mt-2 space-y-1">
+      <button
+        onClick={toggle}
+        disabled={isPending}
+        className="flex items-center gap-2 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-xs text-[var(--text-muted)] hover:border-[var(--accent)] transition-colors"
+      >
+        <span>{enabled ? "🔔" : "🔕"}</span>
+        <span>{isPending ? "Working..." : enabled ? "Notifications on" : "Enable notifications"}</span>
+      </button>
+      {statusMsg && (
+        <p className="px-3 text-[10px] text-[var(--text-muted)]">{statusMsg}</p>
+      )}
+    </div>
   );
 }
 

@@ -569,6 +569,12 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                   <h1 className="mt-2 text-2xl font-semibold">Capture anything</h1>
                 </div>
                 <div className="ml-auto flex items-center gap-2">
+                  <a
+                    href="/app/my-day"
+                    className="rounded-md border border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_14%,transparent)] px-3 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[color-mix(in_oklab,var(--accent)_24%,transparent)] active:scale-95 transition-all duration-75"
+                  >
+                    ☀️ My Day
+                  </a>
                   <button
                     type="button"
                     onClick={handleVaultSync}
@@ -1220,25 +1226,50 @@ function PushToggle() {
   });
   const [isPending, setIsPending] = useState(false);
 
+  // Convert URL-safe base64 VAPID key to Uint8Array for pushManager.subscribe
+  const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
   const toggle = async () => {
     setIsPending(true);
     try {
       if (!enabled) {
+        // Step 1: Request notification permission
         const permission = await Notification.requestPermission();
         if (permission !== "granted") {
+          console.warn("[push] Permission denied:", permission);
           setIsPending(false);
           return;
         }
-        const reg = await navigator.serviceWorker.ready;
-        const vapidKey = document.querySelector<HTMLMetaElement>('meta[name="vapid-public-key"]')?.content;
-        if (!vapidKey) { setIsPending(false); return; }
 
+        // Step 2: Get service worker registration
+        const reg = await navigator.serviceWorker.ready;
+
+        // Step 3: Get VAPID public key from meta tag
+        const vapidKey = document.querySelector<HTMLMetaElement>('meta[name="vapid-public-key"]')?.content;
+        if (!vapidKey) {
+          console.error("[push] VAPID public key not found in meta tag");
+          setIsPending(false);
+          return;
+        }
+
+        // Step 4: Subscribe to push with properly encoded key
         const sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: vapidKey,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
         });
+
+        // Step 5: Send subscription to server
         const subJson = sub.toJSON();
-        await fetch("/api/push/subscribe", {
+        const res = await fetch("/api/push/subscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1246,9 +1277,17 @@ function PushToggle() {
             keys: subJson.keys,
           }),
         });
+
+        if (!res.ok) {
+          console.error("[push] Subscribe API failed:", await res.text());
+          setIsPending(false);
+          return;
+        }
+
         localStorage.setItem("push-enabled", "true");
         setEnabled(true);
       } else {
+        // Disable push
         const reg = await navigator.serviceWorker.ready;
         const sub = await reg.pushManager.getSubscription();
         if (sub) {
@@ -1263,7 +1302,7 @@ function PushToggle() {
         setEnabled(false);
       }
     } catch (err) {
-      console.error("Push toggle error:", err);
+      console.error("[push] Toggle error:", err);
     }
     setIsPending(false);
   };

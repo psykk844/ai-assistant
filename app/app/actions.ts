@@ -1024,8 +1024,9 @@ export async function createSubtask(parentId: string, title: string) {
     priority_score: parent?.priority_score ?? 0.5,
     confidence_score: null,
     needs_review: false,
-    metadata: { parent_item_id: parentId },
-    tags: [],
+    // NOTE: `items` table has no `tags` column — tags live in metadata.tags.
+    // Passing `tags: []` causes PGRST204 "Could not find the 'tags' column".
+    metadata: { parent_item_id: parentId, tags: [] },
   });
 
   if (error) throw new Error(`Failed to create subtask: ${error.message}`);
@@ -1049,6 +1050,48 @@ export async function reorderSubtasks(parentId: string, orderedIds: string[]) {
   await supabase.from("items").update({
     metadata: { ...currentMeta, subtask_order: orderedIds },
   }).eq("id", parentId);
+
+  revalidatePath("/app");
+  revalidatePath("/app/my-day");
+}
+
+/**
+ * Fetch (or refresh) the link summary for a single item.
+ * Used by the DetailPanel "Refresh summary" / "Try fetching summary" button.
+ */
+export async function backfillLinkSummary(formData: FormData) {
+  await requireHardcodedSession();
+  const itemId = String(formData.get("itemId") ?? "").trim();
+  if (!itemId) return;
+
+  const supabase = createAdminClient();
+
+  const { data: item, error } = await supabase
+    .from("items")
+    .select("id, content, title, metadata, type")
+    .eq("id", itemId)
+    .single();
+
+  if (error || !item) return;
+
+  const currentMeta = (item.metadata as Record<string, unknown>) ?? {};
+  // Prefer URL from existing metadata.url, else extract from content
+  const metaUrl = typeof currentMeta.url === "string" ? (currentMeta.url as string) : null;
+  const url = metaUrl || extractUrl(item.content);
+  if (!url) return;
+
+  try {
+    const summary = await fetchLinkSummary(url);
+    const updates: Record<string, unknown> = {
+      metadata: { ...currentMeta, link_summary: summary },
+    };
+    if (summary.page_title && (!item.title || item.title === "Saved link" || item.title === (item.content || "").slice(0, 90))) {
+      updates.title = summary.page_title;
+    }
+    await supabase.from("items").update(updates).eq("id", item.id);
+  } catch (err) {
+    console.error("[backfillLinkSummary] Failed:", err);
+  }
 
   revalidatePath("/app");
   revalidatePath("/app/my-day");

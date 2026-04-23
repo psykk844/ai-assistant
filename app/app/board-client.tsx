@@ -42,6 +42,7 @@ import {
   updateItemDetails,
   updateItemStatus,
   bulkUpdateItems,
+  backfillLinkSummary,
 } from "./actions";
 import { laneFromItem, type LaneKey } from "@/lib/items/lane";
 import type { InboxItem, LinkSummary, RecurrenceConfig } from "@/lib/items/types";
@@ -1194,7 +1195,7 @@ function LinkCardBody({
     <div className="space-y-1.5">
       <p className="text-sm font-medium leading-snug">{displayTitle}</p>
       {summary.ai_summary && (
-        <p className="line-clamp-2 text-[13px] leading-relaxed text-[var(--text-muted)]">
+        <p className="line-clamp-4 text-[13px] leading-relaxed text-[var(--text-muted)]">
           {summary.ai_summary}
         </p>
       )}
@@ -1442,6 +1443,59 @@ function DetailPanel({
             Esc
           </button>
         </div>
+
+        {item.type === "link" && (() => {
+          const meta = asMetadata(item.metadata);
+          const summary = (meta as Record<string, unknown>).link_summary as LinkSummary | undefined;
+          const url = summary?.url || (typeof (meta as Record<string, unknown>).url === "string" ? (meta as Record<string, unknown>).url as string : null) || item.content;
+          let hostname: string | null = null;
+          try { hostname = new URL(url).hostname.replace(/^www\./, ""); } catch { /* ignore */ }
+          const hasSummary = !!(summary && (summary.ai_summary || summary.description));
+          return (
+            <section className="mb-4 rounded-lg border border-purple-400/20 bg-purple-400/5 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-mono uppercase tracking-[0.18em] text-purple-300">Link preview</p>
+                {summary?.site_name || hostname ? (
+                  <span className="text-[11px] text-[var(--text-muted)]">{summary?.site_name || hostname}</span>
+                ) : null}
+              </div>
+              {summary?.page_title && (
+                <p className="text-sm font-medium leading-snug">{summary.page_title}</p>
+              )}
+              {hasSummary ? (
+                <p className="text-sm leading-relaxed text-[var(--text)]">
+                  {summary?.ai_summary || summary?.description}
+                </p>
+              ) : (
+                <p className="text-xs italic text-[var(--text-muted)]">
+                  No summary yet — may still be fetching, or the page blocked access.
+                </p>
+              )}
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md border border-purple-400/30 bg-purple-400/10 px-2 py-1 text-xs text-purple-300 transition hover:border-purple-400/50 hover:text-purple-200"
+              >
+                <svg className="h-3 w-3 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6.5 3.5h-3a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1v-3" />
+                  <path d="M9.5 2.5h4v4" />
+                  <path d="M13.5 2.5l-6 6" />
+                </svg>
+                Open {hostname || "link"}
+              </a>
+              <form action={backfillLinkSummary} className="pt-1">
+                <input type="hidden" name="itemId" value={item.id} />
+                <button
+                  type="submit"
+                  className="text-[11px] text-[var(--text-muted)] underline underline-offset-2 hover:text-[var(--text)]"
+                >
+                  {hasSummary ? "Refresh summary" : "Try fetching summary"}
+                </button>
+              </form>
+            </section>
+          );
+        })()}
 
         <form action={updateItemDetails} className="space-y-3">
           <input type="hidden" name="itemId" value={item.id} />

@@ -10,6 +10,7 @@ import { resolveSessionUserId } from "@/lib/auth/session-user";
 import { laneToPriority, type LaneKey } from "@/lib/items/lane";
 import { indexItemsInVectorStore } from "@/lib/items/embeddings";
 import { extractUrl, fetchLinkSummary } from "@/lib/items/link-summary";
+import { splitInboxChunks } from "@/lib/items/split-chunks";
 import { mirrorItemToObsidian, removeMirroredFileFromMetadata } from "@/lib/obsidian/mirror";
 import { readItemTags, withStoredTags } from "./item-tags";
 import { appendFile, mkdir } from "node:fs/promises";
@@ -52,23 +53,6 @@ async function persistServerActionError(action: string, context: Record<string, 
       persistError: serializeError(persistError),
     });
   }
-}
-
-function splitInboxChunks(raw: string): string[] {
-  const blankLineParts = raw.split(/\n\s*\n/).map((c) => c.trim()).filter(Boolean);
-  if (blankLineParts.length > 1) return blankLineParts;
-
-  const lines = raw.split(/\n/).map((l) => l.trim()).filter(Boolean);
-  if (lines.length > 1 && lines.every((l) => l.length <= 120)) {
-    return lines.map((l) => l.replace(/[,;]+$/, "").trim()).filter(Boolean);
-  }
-
-  if (lines.length === 1) {
-    const parts = lines[0].split(/[,;]/).map((p) => p.trim()).filter(Boolean);
-    if (parts.length > 1 && parts.every((part) => part.length <= 120)) return parts;
-  }
-
-  return [raw.trim()];
 }
 
 function asMetadata(value: unknown): Record<string, unknown> {
@@ -118,7 +102,19 @@ export async function captureInboxItem(formData: FormData) {
 
   await requireHardcodedSession();
 
-  const chunks = splitInboxChunks(raw);
+  // Accept pre-split chunks from the preview modal, or auto-split
+  const chunksJson = formData.get("chunks");
+  let chunks: string[];
+  if (chunksJson && typeof chunksJson === "string") {
+    try {
+      const parsed = JSON.parse(chunksJson);
+      chunks = Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : splitInboxChunks(raw);
+    } catch {
+      chunks = splitInboxChunks(raw);
+    }
+  } else {
+    chunks = splitInboxChunks(raw);
+  }
   if (chunks.length === 0) return;
 
   const supabase = createAdminClient();

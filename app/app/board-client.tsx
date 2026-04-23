@@ -1253,10 +1253,12 @@ function PushToggle() {
         // Step 2: Get service worker registration
         const reg = await navigator.serviceWorker.ready;
 
-        // Step 3: Get VAPID public key from meta tag
-        const vapidKey = document.querySelector<HTMLMetaElement>('meta[name="vapid-public-key"]')?.content;
+        // Step 3: Get VAPID public key from API (env var not available in static HTML)
+        const vapidRes = await fetch("/api/push/vapid-key");
+        const vapidData = await vapidRes.json();
+        const vapidKey = vapidData.key;
         if (!vapidKey) {
-          console.error("[push] VAPID public key not found in meta tag");
+          console.error("[push] VAPID public key not configured on server");
           setIsPending(false);
           return;
         }

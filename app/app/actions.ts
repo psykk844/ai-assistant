@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { classifySmartInput } from "@/lib/smart/classify-with-ai";
+import { buildPreferenceContext, recordCorrection } from "@/lib/smart/user-preferences";
 import { requireHardcodedSession, clearHardcodedSession } from "@/lib/auth/session";
 import { resolveSessionUserId } from "@/lib/auth/session-user";
 import { laneToPriority, type LaneKey } from "@/lib/items/lane";
@@ -122,7 +123,15 @@ export async function captureInboxItem(formData: FormData) {
   const supabase = createAdminClient();
   const userId = await resolveSessionUserId();
 
-  const classifications = await Promise.all(chunks.map((chunk) => classifySmartInput(chunk)));
+  // Build user preference context for AI classification
+  let preferenceContext: string | undefined;
+  try {
+    preferenceContext = await buildPreferenceContext(userId) || undefined;
+  } catch {
+    // Preference table may not exist yet — gracefully skip
+  }
+
+  const classifications = await Promise.all(chunks.map((chunk) => classifySmartInput(chunk, preferenceContext)));
 
   const rows = chunks.map((chunk, i) => ({
     user_id: userId,
@@ -340,12 +349,12 @@ export async function moveItemToLane(input: { itemId: string; toLane: LaneKey; f
     const supabase = createAdminClient();
     const userId = await resolveSessionUserId();
 
-    const { data: existing } = await supabase
-      .from("items")
-      .select("metadata")
-      .eq("id", itemId)
-      .eq("user_id", userId)
-      .single();
+  const { data: existing } = await supabase
+    .from("items")
+    .select("status, metadata")
+    .eq("id", itemId)
+    .eq("user_id", userId)
+    .single();
 
     const metadata = withoutTrashFlags(asMetadata(existing?.metadata));
     const nextPriority = laneToPriority(toLane);
@@ -457,7 +466,7 @@ export async function updateItemDetails(formData: FormData) {
 
   const { data: existing } = await supabase
     .from("items")
-    .select("status, metadata")
+    .select("type, status, priority_score, metadata")
     .eq("id", itemId)
     .eq("user_id", userId)
     .single();
@@ -482,6 +491,26 @@ export async function updateItemDetails(formData: FormData) {
     .single();
 
   if (error) throw new Error(`Failed to update item details: ${error.message}`);
+
+  // Record correction if user changed type or lane from what the AI assigned
+  if (existing) {
+    const prev = existing as { type?: string; priority_score?: number };
+    const originalType = String(prev.type ?? "");
+    const originalLane = (prev.priority_score ?? 0) >= 0.85 ? "today" : (prev.priority_score ?? 0) >= 0.7 ? "next" : "backlog";
+    try {
+      await recordCorrection({
+        user_id: userId,
+        item_id: itemId,
+        content_snippet: content.slice(0, 200),
+        original_type: originalType,
+        corrected_type: type,
+        original_lane: originalLane,
+        corrected_lane: lane,
+      });
+    } catch {
+      // Preference table may not exist yet — silently skip
+    }
+  }
 
   await supabase.from("interactions").insert({
     user_id: userId,

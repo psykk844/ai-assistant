@@ -56,7 +56,7 @@ function normalizeClassification(raw: AiPayload | null, fallback: Classification
   };
 }
 
-export async function classifySmartInput(content: string): Promise<Classification> {
+export async function classifySmartInput(content: string, userPreferenceContext?: string): Promise<Classification> {
   const fallback = classifyInput(content);
 
   const apiKey = process.env.OARS_API_KEY;
@@ -72,6 +72,13 @@ export async function classifySmartInput(content: string): Promise<Classificatio
 
   const prompt = `Classify this personal productivity inbox entry into one of: note, todo, link. Return only strict JSON with keys: type, confidenceScore, needsReview, priorityScore, title, metadata.\n\nEntry:\n${content}`;
 
+  const systemParts = [
+    "You classify productivity items. Output strict JSON only with: type(note|todo|link), confidenceScore(0..1), needsReview(boolean), priorityScore(0..1), title(max 90 chars), metadata(object).",
+  ];
+  if (userPreferenceContext) {
+    systemParts.push("", userPreferenceContext);
+  }
+
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -85,8 +92,7 @@ export async function classifySmartInput(content: string): Promise<Classificatio
         messages: [
           {
             role: "system",
-            content:
-              "You classify productivity items. Output strict JSON only with: type(note|todo|link), confidenceScore(0..1), needsReview(boolean), priorityScore(0..1), title(max 90 chars), metadata(object).",
+            content: systemParts.join("\n"),
           },
           { role: "user", content: prompt },
         ],

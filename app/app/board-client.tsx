@@ -1,5 +1,11 @@
 "use client";
 
+/* PWA install prompt type (not in standard lib.dom) */
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -103,6 +109,12 @@ function laneLabel(lane: LaneKey) {
   return "Backlog";
 }
 
+function laneColor(lane: LaneKey) {
+  if (lane === "today") return "var(--lane-today)";
+  if (lane === "next") return "var(--lane-next)";
+  return "var(--lane-backlog)";
+}
+
 function getSuggestions(item: InboxItem): string[] {
   const title = item.title || item.content.slice(0, 80);
   return [
@@ -147,6 +159,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkTagInput, setBulkTagInput] = useState("");
   const [showBulkRetag, setShowBulkRetag] = useState(false);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<Event | null>(null);
   const [isPending, startTransition] = useTransition();
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -176,6 +189,15 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
   useEffect(() => {
     setItems(initialItems);
   }, [initialItems]);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -509,8 +531,12 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                       ? "border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_14%,transparent)]"
                       : "border-[var(--border)] bg-[var(--bg-muted)] hover:border-[var(--accent)]"
                   }`}
+                  style={{ borderLeftWidth: "3px", borderLeftColor: laneColor(lane) }}
                 >
-                  <span className="text-[var(--text-muted)]">{laneLabel(lane)}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="inline-block h-[6px] w-[6px] rounded-full" style={{ backgroundColor: laneColor(lane) }} />
+                    <span style={{ color: laneColor(lane) }}>{laneLabel(lane)}</span>
+                  </span>
                   <span className="float-right font-mono">{byLane[lane].length}</span>
                 </button>
               ))}
@@ -766,6 +792,19 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
               >
                 Open /widget (pin with PowerToys Win+Ctrl+T)
               </a>
+
+              {deferredInstallPrompt && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    (deferredInstallPrompt as BeforeInstallPromptEvent).prompt();
+                    setDeferredInstallPrompt(null);
+                  }}
+                  className="mt-3 w-full rounded-lg border border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_14%,transparent)] px-3 py-2 text-sm font-medium text-[var(--accent)] transition hover:bg-[color-mix(in_oklab,var(--accent)_22%,transparent)] active:scale-95 active:brightness-90 duration-75"
+                >
+                  Install App
+                </button>
+              )}
             </div>
 
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
@@ -966,8 +1005,11 @@ function LaneColumn({
       className={`rounded-xl border bg-[var(--bg-elevated)] p-5 transition ${isOver ? "border-[var(--accent)]" : "border-[var(--border)]"}`}
     >
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">{laneLabel(lane)}</p>
-        <span className="text-xs text-[var(--text-muted)]">{items.length}</span>
+        <p className="flex items-center gap-2 text-xs font-mono uppercase tracking-[0.2em]" style={{ color: laneColor(lane) }}>
+          <span className="inline-block h-[6px] w-[6px] rounded-full" style={{ backgroundColor: laneColor(lane) }} />
+          {laneLabel(lane)}
+        </p>
+        <span className="text-xs font-mono" style={{ color: laneColor(lane), opacity: 0.6 }}>{items.length}</span>
       </div>
 
       {items.length === 0 ? (
@@ -1046,7 +1088,7 @@ function SortableCard({
         <span className={`rounded-md border px-2 py-0.5 text-xs font-mono uppercase ${typeStyles(item.type)}`}>
           {item.type}
         </span>
-        <span className="rounded-md border border-[var(--border)] px-2 py-0.5 text-xs font-mono uppercase text-[var(--text-muted)]">{lane}</span>
+        <span className="rounded-md border px-2 py-0.5 text-xs font-mono uppercase" style={{ color: laneColor(lane), borderColor: `color-mix(in oklab, ${laneColor(lane)} 30%, transparent)` }}>{lane}</span>
         {item.needs_review && (
           <span className="rounded-md border border-amber-300/30 bg-amber-300/15 px-2 py-0.5 text-xs font-mono uppercase text-amber-200">
             review
@@ -1292,6 +1334,7 @@ function DetailPanel({
           <button type="submit" className="rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-black active:scale-95 active:brightness-90 active:bg-green-700 dark:active:bg-green-800 transition-transform duration-75">
             Save changes
           </button>
+          <p className="mt-1 text-[11px] text-[var(--text-muted)]">Changes to type or lane will improve future AI classifications.</p>
         </form>
 
         <div className="mt-2 flex flex-wrap gap-2">

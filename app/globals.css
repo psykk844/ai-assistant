@@ -12,6 +12,9 @@
   --success: #42c9a4;
   --warning: #f0b34e;
   --danger: #ff7f8f;
+  --lane-today: #ff6b6b;
+  --lane-next: #ffa94d;
+  --lane-backlog: #868e96;
 }
 
 :root[data-theme="light"] {
@@ -26,6 +29,9 @@
   --success: #0f9f7a;
   --warning: #b7791f;
   --danger: #c53030;
+  --lane-today: #dc2626;
+  --lane-next: #d97706;
+  --lane-backlog: #6b7280;
 }
 
 @theme inline {

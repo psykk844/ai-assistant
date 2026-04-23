@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   // Fetch all template items with recurrence
   const { data: templates, error } = await supabase
     .from("items")
-    .select("id, type, title, content, status, priority_score, confidence_score, needs_review, created_at, updated_at, metadata, tags")
+    .select("id, type, title, content, status, priority_score, confidence_score, needs_review, created_at, updated_at, metadata")
     .eq("status", "active")
     .not("metadata->recurrence", "is", null);
 

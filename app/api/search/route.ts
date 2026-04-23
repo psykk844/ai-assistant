@@ -1,110 +1,145 @@
-import { NextResponse } from "next/server";
-import { assertApiSession } from "@/lib/auth/api-session";
-import { resolveSessionUserId } from "@/lib/auth/session-user";
+import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { embedText } from "@/lib/ai/oars";
-import { searchPoints } from "@/lib/qdrant/client";
+import { requireHardcodedSession } from "@/lib/auth/session";
+import { resolveSessionUserId } from "@/lib/auth/session-user";
 
-function normalizeQuery(query: string) {
-  const lowered = query.toLowerCase();
-  return lowered
-    .replace(/\?/g, " ")
-    .replace(/(do|i|have|any|my|the|a|an|about|for|to|please|show|me|notes|note)/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+export const dynamic = "force-dynamic";
 
-function uniqueByKey<T>(rows: T[], keyFn: (row: T) => string) {
-  const seen = new Set<string>();
-  const output: T[] = [];
-  for (const row of rows) {
-    const key = keyFn(row);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    output.push(row);
+export async function GET(req: NextRequest) {
+  const query = req.nextUrl.searchParams.get("q")?.trim();
+  if (!query) return NextResponse.json({ results: [] });
+
+  await requireHardcodedSession();
+  const userId = await resolveSessionUserId();
+  const supabase = createAdminClient();
+
+  // Fetch all active items (small dataset — scales to ~500 items fine)
+  const { data: allItems, error } = await supabase
+    .from("items")
+    .select("id, type, title, content, status, priority_score, metadata, created_at, updated_at")
+    .eq("user_id", userId)
+    .in("status", ["active", "completed"])
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (error || !allItems?.length) {
+    return NextResponse.json({ results: [], lexical_hits: 0, ai_hits: 0 });
   }
-  return output;
-}
 
-export async function GET(request: Request) {
+  // Step 1: Quick lexical pre-filter for exact/substring matches
+  const lowerQuery = query.toLowerCase();
+  const queryWords = lowerQuery.split(/\s+/).filter(w => w.length > 2);
+
+  const lexicalMatches = allItems.filter(item => {
+    const text = `${item.title ?? ""} ${item.content}`.toLowerCase();
+    return queryWords.some(word => text.includes(word));
+  });
+
+  // Step 2: AI semantic ranking — send query + items to LLM
+  let aiRankedIds: string[] = [];
   try {
-    await assertApiSession();
-    const userId = await resolveSessionUserId();
+    const baseUrl = process.env.OARS_BASE_URL ?? "https://llm.digiwebfr.studio/v1";
+    const apiKey = process.env.OARS_API_KEY ?? "";
+    const model = process.env.OARS_MODEL ?? "claude-sonnet-4-6";
 
-    const { searchParams } = new URL(request.url);
-    const originalQuery = String(searchParams.get("q") ?? "").trim();
-    if (!originalQuery) return NextResponse.json({ ok: true, results: [] });
+    if (apiKey) {
+      // Build compact item summaries for the LLM
+      const itemSummaries = allItems.map(item => ({
+        id: item.id,
+        type: item.type,
+        title: item.title ?? "(untitled)",
+        content: (item.content ?? "").slice(0, 200),
+        status: item.status,
+      }));
 
-    const normalized = normalizeQuery(originalQuery) || originalQuery;
-    const lexicalNeedle = normalized || originalQuery;
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          max_tokens: 300,
+          temperature: 0,
+          messages: [
+            {
+              role: "system",
+              content: `You are a search relevance engine. Given a user query and a list of items, return ONLY the IDs of items that are relevant to the query, ranked from most to least relevant. Return a JSON array of ID strings. If nothing is relevant, return []. Be generous — include items that are even loosely related. Consider semantic meaning, not just keyword matching.`,
+            },
+            {
+              role: "user",
+              content: `Query: "${query}"\n\nItems:\n${JSON.stringify(itemSummaries, null, 0)}`,
+            },
+          ],
+        }),
+      });
 
-    const embedding = await embedText(`${originalQuery}
-${normalized}`);
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content ?? "[]";
+        // Extract JSON array from response (may have markdown fencing)
+        const jsonMatch = content.match(/\[[\s\S]*?\]/);
+        if (jsonMatch) {
+          aiRankedIds = JSON.parse(jsonMatch[0]);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[search] AI ranking failed:", err);
+  }
 
-    const [vaultResults, itemVectorResults] = embedding
-      ? await Promise.all([
-          searchPoints("vault_notes", embedding, 16, {
-            must: [{ key: "user_id", match: { value: userId } }],
-          }),
-          searchPoints("link_embeddings", embedding, 16, {
-            must: [{ key: "user_id", match: { value: userId } }],
-          }),
-        ])
-      : [[], []];
+  // Step 3: Merge results — AI ranked first, then lexical matches, deduplicated
+  const seen = new Set<string>();
+  const results: Array<{
+    source: string;
+    score: number;
+    item: {
+      id: string;
+      title: string;
+      content: string;
+      type: string;
+      status: string;
+    };
+  }> = [];
 
-    const admin = createAdminClient();
-    const { data: lexicalMatches } = await admin
-      .from("items")
-      .select("id, type, title, content, status, priority_score, confidence_score, needs_review, created_at")
-      .eq("user_id", userId)
-      .or(`title.ilike.%${lexicalNeedle}%,content.ilike.%${lexicalNeedle}%`)
-      .limit(20);
-
-    const mapped = [
-      ...(lexicalMatches ?? []).map((item) => ({
-        source: "inbox",
-        score: 1,
-        item,
-      })),
-      ...itemVectorResults.map((result) => ({
-        source: "inbox-vector",
-        score: Number(result.score ?? 0),
-        item: {
-          id: String((result.payload as Record<string, unknown> | undefined)?.item_id ?? ""),
-          title: String((result.payload as Record<string, unknown> | undefined)?.title ?? "Untitled"),
-          content: String((result.payload as Record<string, unknown> | undefined)?.content ?? ""),
-          type: String((result.payload as Record<string, unknown> | undefined)?.type ?? "note"),
-          status: String((result.payload as Record<string, unknown> | undefined)?.status ?? "active"),
-        },
-      })),
-      ...vaultResults.map((result) => ({
-        source: "vault",
-        score: Number(result.score ?? 0),
-        item: {
-          id: String((result.payload as Record<string, unknown> | undefined)?.filepath ?? ""),
-          title: String((result.payload as Record<string, unknown> | undefined)?.title ?? "Vault note"),
-          content: String((result.payload as Record<string, unknown> | undefined)?.chunk ?? ""),
-          type: "note",
-          status: "active",
-          filepath: String((result.payload as Record<string, unknown> | undefined)?.filepath ?? ""),
-        },
-      })),
-    ];
-
-    const deduped = uniqueByKey(mapped, (entry) => `${entry.source}:${entry.item.id}:${entry.item.title}`);
-
-    return NextResponse.json({
-      ok: true,
-      results: deduped.slice(0, 24),
-      meta: {
-        query: originalQuery,
-        normalized,
-        vaultHits: vaultResults.length,
-        inboxVectorHits: itemVectorResults.length,
-        lexicalHits: (lexicalMatches ?? []).length,
+  // AI-ranked results first (highest relevance)
+  for (let i = 0; i < aiRankedIds.length; i++) {
+    const id = aiRankedIds[i];
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const item = allItems.find(it => it.id === id);
+    if (!item) continue;
+    results.push({
+      source: "ai",
+      score: 1.0 - (i * 0.05), // Decreasing score by rank
+      item: {
+        id: item.id,
+        title: item.title ?? "Untitled",
+        content: item.content,
+        type: item.type,
+        status: item.status,
       },
     });
-  } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "search-failed" }, { status: 500 });
   }
+
+  // Lexical matches that AI missed
+  for (const item of lexicalMatches) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    results.push({
+      source: "lexical",
+      score: 0.5,
+      item: {
+        id: item.id,
+        title: item.title ?? "Untitled",
+        content: item.content,
+        type: item.type,
+        status: item.status,
+      },
+    });
+  }
+
+  return NextResponse.json({
+    results: results.slice(0, 24),
+    lexical_hits: lexicalMatches.length,
+    ai_hits: aiRankedIds.length,
+  });
 }

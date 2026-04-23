@@ -13,6 +13,14 @@ export type RecurrenceConfig = {
   is_template?: boolean; // true on the original recurring item
 };
 
+export type LinkSummary = {
+  url: string;
+  site_name: string | null;
+  page_title: string | null;
+  description: string | null;
+  ai_summary: string | null;
+};
+
 export type ItemMetadata = {
   dismissed?: boolean;
   deleted_at?: string;
@@ -21,6 +29,7 @@ export type ItemMetadata = {
   generated_from?: string;
   recurrence?: RecurrenceConfig;
   subtask_order?: string[]; // ordered child IDs for manual reorder
+  link_summary?: LinkSummary;
   [key: string]: unknown;
 };
 

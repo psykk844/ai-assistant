@@ -44,7 +44,7 @@ import {
   bulkUpdateItems,
 } from "./actions";
 import { laneFromItem, type LaneKey } from "@/lib/items/lane";
-import type { InboxItem, RecurrenceConfig } from "@/lib/items/types";
+import type { InboxItem, LinkSummary, RecurrenceConfig } from "@/lib/items/types";
 import { asMetadata, filterBoardItems, getDragActivationDistance, getDragHandleLabel, isTrash } from "./board-logic";
 import { RecurrencePicker } from "./recurrence-picker";
 import { SubtaskTreePanel } from "./subtask-tree";
@@ -1137,8 +1137,14 @@ function SortableCard({
       </div>
 
       <div onClick={onOpen} className="w-full text-left cursor-pointer">
-        <p className="text-sm font-medium">{item.title || "Untitled"}</p>
-        <p className="mt-1 line-clamp-2 text-sm text-[var(--text-muted)]">{item.content}</p>
+        {item.type === "link" && (item.metadata as Record<string, unknown>)?.link_summary ? (
+          <LinkCardBody item={item} summary={(item.metadata as Record<string, unknown>).link_summary as LinkSummary} stopDrag={stopDrag} />
+        ) : (
+          <>
+            <p className="text-sm font-medium">{item.title || "Untitled"}</p>
+            <p className="mt-1 line-clamp-2 text-sm text-[var(--text-muted)]">{item.content}</p>
+          </>
+        )}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -1164,6 +1170,50 @@ function SortableCard({
         </form>
       </div>
     </li>
+  );
+}
+
+/** Rich rendering for link items with summaries */
+function LinkCardBody({
+  item,
+  summary,
+  stopDrag,
+}: {
+  item: InboxItem;
+  summary: LinkSummary;
+  stopDrag: (e: React.PointerEvent) => void;
+}) {
+  const displayTitle = item.title || summary.page_title || "Untitled link";
+  const displayUrl = summary.url || item.content;
+  let hostname: string | null = null;
+  try {
+    hostname = new URL(displayUrl).hostname.replace(/^www\./, "");
+  } catch { /* ignore */ }
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-sm font-medium leading-snug">{displayTitle}</p>
+      {summary.ai_summary && (
+        <p className="line-clamp-2 text-[13px] leading-relaxed text-[var(--text-muted)]">
+          {summary.ai_summary}
+        </p>
+      )}
+      <a
+        href={displayUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={stopDrag}
+        className="inline-flex items-center gap-1.5 rounded-md border border-purple-400/20 bg-purple-400/10 px-2 py-0.5 text-xs text-purple-300 transition hover:border-purple-400/40 hover:text-purple-200"
+      >
+        <svg className="h-3 w-3 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6.5 3.5h-3a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1v-3" />
+          <path d="M9.5 2.5h4v4" />
+          <path d="M13.5 2.5l-6 6" />
+        </svg>
+        {hostname || summary.site_name || "Open link"}
+      </a>
+    </div>
   );
 }
 

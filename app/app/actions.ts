@@ -9,6 +9,7 @@ import { requireHardcodedSession, clearHardcodedSession } from "@/lib/auth/sessi
 import { resolveSessionUserId } from "@/lib/auth/session-user";
 import { laneToPriority, type LaneKey } from "@/lib/items/lane";
 import { indexItemsInVectorStore } from "@/lib/items/embeddings";
+import { extractUrl, fetchLinkSummary } from "@/lib/items/link-summary";
 import { mirrorItemToObsidian, removeMirroredFileFromMetadata } from "@/lib/obsidian/mirror";
 import { readItemTags, withStoredTags } from "./item-tags";
 import { appendFile, mkdir } from "node:fs/promises";
@@ -190,6 +191,32 @@ export async function captureInboxItem(formData: FormData) {
       status: row.status,
     })),
   );
+
+  // Fire-and-forget: fetch link summaries for any link items
+  for (const row of inserted) {
+    if (row.type === "link") {
+      const url = extractUrl(row.content);
+      if (url) {
+        fetchLinkSummary(url).then(async (summary) => {
+          try {
+            const currentMeta = (row.metadata as Record<string, unknown>) ?? {};
+            const updates: Record<string, unknown> = {
+              metadata: { ...currentMeta, link_summary: summary },
+            };
+            // Update title if we got a better one from the page
+            if (summary.page_title && (!row.title || row.title === "Saved link" || row.title === row.content.slice(0, 90))) {
+              updates.title = summary.page_title;
+            }
+            await supabase.from("items").update(updates).eq("id", row.id);
+          } catch (err) {
+            console.error("[link-summary] Failed to save summary for", row.id, err);
+          }
+        }).catch(err => {
+          console.error("[link-summary] Background fetch failed:", err);
+        });
+      }
+    }
+  }
 
   revalidatePath("/app");
   revalidatePath("/widget");

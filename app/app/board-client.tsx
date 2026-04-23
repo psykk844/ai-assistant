@@ -29,6 +29,7 @@ import { InboxComposer } from "./inbox-composer";
 import {
   captureInboxItem,
   clearCompletedBacklog,
+  createSubtask,
   createSubtaskFromSuggestion,
   dismissItem,
   markItemReviewed,
@@ -36,14 +37,17 @@ import {
   permanentlyDeleteItem,
   purgeExpiredTrash,
   restoreItemFromTrash,
+  setRecurrence,
   signOut,
   updateItemDetails,
   updateItemStatus,
   bulkUpdateItems,
 } from "./actions";
 import { laneFromItem, type LaneKey } from "@/lib/items/lane";
-import type { InboxItem } from "@/lib/items/types";
+import type { InboxItem, RecurrenceConfig } from "@/lib/items/types";
 import { asMetadata, filterBoardItems, getDragActivationDistance, getDragHandleLabel, isTrash } from "./board-logic";
+import { RecurrencePicker } from "./recurrence-picker";
+import { SubtaskTreePanel } from "./subtask-tree";
 
 type AppBoardProps = {
   initialItems: InboxItem[];
@@ -521,6 +525,16 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
             <h2 className="mt-2 text-lg font-semibold">Linear Console v2</h2>
 
             <div className="mt-4 space-y-2 text-sm">
+              {/* My Day link */}
+              <a
+                href="/app/my-day"
+                className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm font-medium text-[var(--text)] hover:border-[var(--accent)] transition-colors"
+                style={{ borderLeftWidth: "3px", borderLeftColor: "var(--accent)" }}
+              >
+                <span>☀️</span>
+                <span>My Day</span>
+              </a>
+
               {LANE_ORDER.map((lane) => (
                 <button
                   key={lane}
@@ -784,6 +798,8 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                 </form>
               </div>
 
+              <PushToggle />
+
               <a
                 href="/widget"
                 target="_blank"
@@ -926,6 +942,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
           item={selectedItem}
           lane={laneFromItem(selectedItem)}
           related={relatedResults}
+          allItems={items}
           editingTags={editingTags}
           tagInput={tagInput}
           suggestedTags={suggestedTags}
@@ -1196,10 +1213,80 @@ function TrashSection({
   );
 }
 
+function PushToggle() {
+  const [enabled, setEnabled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("push-enabled") === "true";
+  });
+  const [isPending, setIsPending] = useState(false);
+
+  const toggle = async () => {
+    setIsPending(true);
+    try {
+      if (!enabled) {
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+          setIsPending(false);
+          return;
+        }
+        const reg = await navigator.serviceWorker.ready;
+        const vapidKey = document.querySelector<HTMLMetaElement>('meta[name="vapid-public-key"]')?.content;
+        if (!vapidKey) { setIsPending(false); return; }
+
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: vapidKey,
+        });
+        const subJson = sub.toJSON();
+        await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            endpoint: subJson.endpoint,
+            keys: subJson.keys,
+          }),
+        });
+        localStorage.setItem("push-enabled", "true");
+        setEnabled(true);
+      } else {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await fetch("/api/push/unsubscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ endpoint: sub.endpoint }),
+          });
+          await sub.unsubscribe();
+        }
+        localStorage.setItem("push-enabled", "false");
+        setEnabled(false);
+      }
+    } catch (err) {
+      console.error("Push toggle error:", err);
+    }
+    setIsPending(false);
+  };
+
+  if (typeof window !== "undefined" && !("Notification" in window)) return null;
+
+  return (
+    <button
+      onClick={toggle}
+      disabled={isPending}
+      className="mt-2 flex items-center gap-2 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-xs text-[var(--text-muted)] hover:border-[var(--accent)] transition-colors"
+    >
+      <span>{enabled ? "🔔" : "🔕"}</span>
+      <span>{enabled ? "Notifications on" : "Enable notifications"}</span>
+    </button>
+  );
+}
+
 function DetailPanel({
   item,
   lane,
   related,
+  allItems,
   editingTags,
   tagInput,
   suggestedTags,
@@ -1211,6 +1298,7 @@ function DetailPanel({
   item: InboxItem;
   lane: LaneKey;
   related: SearchResult[];
+  allItems: InboxItem[];
   editingTags: string[];
   tagInput: string;
   suggestedTags: string[];
@@ -1330,6 +1418,18 @@ function DetailPanel({
               </div>
             </div>
           </section>
+
+          {/* Recurrence */}
+          <RecurrencePicker
+            itemId={item.id}
+            currentRecurrence={(item.metadata as Record<string, unknown>)?.recurrence as RecurrenceConfig | undefined}
+          />
+
+          {/* Subtasks */}
+          <SubtaskTreePanel
+            itemId={item.id}
+            allItems={allItems}
+          />
 
           <button type="submit" className="rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-black active:scale-95 active:brightness-90 active:bg-green-700 dark:active:bg-green-800 transition-transform duration-75">
             Save changes

@@ -3,12 +3,24 @@ import type { LaneKey } from "@/lib/items/lane";
 export type ItemType = "note" | "todo" | "link";
 export type ItemStatus = "active" | "completed" | "archived";
 
+export type RecurrenceFrequency = "daily" | "weekly";
+
+export type RecurrenceConfig = {
+  frequency: RecurrenceFrequency;
+  days?: number[]; // For weekly: 1=Mon..7=Sun
+  next_due: string; // ISO date "2026-04-24"
+  template_id?: string; // On generated instances, points to template
+  is_template?: boolean; // true on the original recurring item
+};
+
 export type ItemMetadata = {
   dismissed?: boolean;
   deleted_at?: string;
   cleared_from_backlog?: boolean;
   parent_item_id?: string;
   generated_from?: string;
+  recurrence?: RecurrenceConfig;
+  subtask_order?: string[]; // ordered child IDs for manual reorder
   [key: string]: unknown;
 };
 

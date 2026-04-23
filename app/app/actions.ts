@@ -939,3 +939,94 @@ export async function bulkUpdateItems(itemIds: string[], updates: BulkUpdateInpu
   revalidatePath("/app");
   revalidatePath("/widget");
 }
+
+export async function setRecurrence(itemId: string, frequency: "daily" | "weekly" | null, days?: number[]) {
+  await requireHardcodedSession();
+  const supabase = createAdminClient();
+
+  // Fetch current item
+  const { data: item, error: fetchErr } = await supabase
+    .from("items")
+    .select("metadata")
+    .eq("id", itemId)
+    .single();
+  if (fetchErr || !item) return;
+
+  const currentMeta = (item.metadata as Record<string, unknown>) ?? {};
+
+  if (frequency === null) {
+    // Remove recurrence
+    const { recurrence, ...restMeta } = currentMeta;
+    await supabase.from("items").update({ metadata: restMeta }).eq("id", itemId);
+  } else {
+    const { calculateNextDue } = await import("@/lib/items/recurrence");
+    const today = new Date().toISOString().slice(0, 10);
+    const nextDue = calculateNextDue(frequency, days, today);
+
+    await supabase.from("items").update({
+      metadata: {
+        ...currentMeta,
+        recurrence: {
+          frequency,
+          days: frequency === "weekly" ? days : undefined,
+          next_due: nextDue,
+          is_template: true,
+        },
+      },
+    }).eq("id", itemId);
+  }
+
+  revalidatePath("/app");
+  revalidatePath("/app/my-day");
+}
+
+export async function createSubtask(parentId: string, title: string) {
+  await requireHardcodedSession();
+  const supabase = createAdminClient();
+  const userId = await resolveSessionUserId();
+
+  // Fetch parent to inherit lane + type
+  const { data: parent } = await supabase
+    .from("items")
+    .select("type, priority_score")
+    .eq("id", parentId)
+    .single();
+
+  const { error } = await supabase.from("items").insert({
+    user_id: userId,
+    type: parent?.type ?? "todo",
+    title,
+    content: "",
+    status: "active",
+    priority_score: parent?.priority_score ?? 0.5,
+    confidence_score: null,
+    needs_review: false,
+    metadata: { parent_item_id: parentId },
+    tags: [],
+  });
+
+  if (error) throw new Error(`Failed to create subtask: ${error.message}`);
+
+  revalidatePath("/app");
+  revalidatePath("/app/my-day");
+}
+
+export async function reorderSubtasks(parentId: string, orderedIds: string[]) {
+  await requireHardcodedSession();
+  const supabase = createAdminClient();
+
+  const { data: parent } = await supabase
+    .from("items")
+    .select("metadata")
+    .eq("id", parentId)
+    .single();
+
+  const currentMeta = (parent?.metadata as Record<string, unknown>) ?? {};
+
+  await supabase.from("items").update({
+    metadata: { ...currentMeta, subtask_order: orderedIds },
+  }).eq("id", parentId);
+
+  revalidatePath("/app");
+  revalidatePath("/app/my-day");
+}

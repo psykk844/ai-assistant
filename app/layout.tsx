@@ -46,6 +46,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
+        <meta name="vapid-public-key" content={process.env.VAPID_PUBLIC_KEY ?? ""} />
         <script
           dangerouslySetInnerHTML={{
             __html: `

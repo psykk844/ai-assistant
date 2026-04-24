@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   DndContext,
   PointerSensor,
+  TouchSensor,
   KeyboardSensor,
   closestCenter,
   useSensor,
@@ -62,7 +63,13 @@ export function MyDayClient({
   }, [allActiveItems]);
 
   const sensors = useSensors(
+    // Desktop: small distance threshold so clicks don't start drags.
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // Mobile: require a small hold before drag starts, so tapping a checkbox
+    // or button doesn't get swallowed by the drag system.
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 180, tolerance: 6 },
+    }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
@@ -253,6 +260,9 @@ export function MyDayClient({
       transform: CSS.Transform.toString(transform),
       transition,
       opacity: isDragging ? 0.4 : 1,
+      // Prevents the browser from intercepting touch gestures (page scroll) that
+      // would otherwise cancel drags on mobile.
+      touchAction: "none" as const,
     };
 
     const node = nodeById.get(item.id);

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { getDragActivationDistance, isTrash, shouldHideFromInitialBoard } from "../app/app/board-logic";
+import { filterBoardItems, getDragActivationDistance, isSubtask, isTrash, shouldHideFromInitialBoard } from "../app/app/board-logic";
 
 describe("board logic regressions", () => {
   it("treats archived items with deleted_at timestamps as trash even when metadata comes from json serialization", () => {
@@ -264,5 +264,65 @@ describe("board logic regressions", () => {
 
     expect(source).toContain("data-drag-handle");
     expect(source).not.toContain("cursor-grab active:cursor-grabbing select-none");
+  });
+
+  // REGRESSION: subtasks must never appear as standalone cards on the board.
+  // When they did, parent tasks looked "lost" and lanes filled with fragments.
+  // See progress.md 2026-04-24.
+  it("isSubtask returns true only when metadata.parent_item_id is a non-empty string", () => {
+    expect(isSubtask({ metadata: { parent_item_id: "abc-123" } } as never)).toBe(true);
+    expect(isSubtask({ metadata: { parent_item_id: "" } } as never)).toBe(false);
+    expect(isSubtask({ metadata: {} } as never)).toBe(false);
+    expect(isSubtask({ metadata: null } as never)).toBe(false);
+    expect(isSubtask({} as never)).toBe(false);
+  });
+
+  it("filterBoardItems excludes subtasks from every active filter so parents are never visually 'lost'", () => {
+    const items = [
+      {
+        id: "parent-1",
+        title: "Finish YouTube Studio project",
+        content: "",
+        type: "todo",
+        status: "active",
+        priority_score: 0.7,
+        confidence_score: null,
+        needs_review: false,
+        created_at: new Date().toISOString(),
+        metadata: {},
+        tags: [],
+      },
+      {
+        id: "sub-1",
+        title: "thumbnail",
+        content: "",
+        type: "todo",
+        status: "active",
+        priority_score: 0.7,
+        confidence_score: null,
+        needs_review: false,
+        created_at: new Date().toISOString(),
+        metadata: { parent_item_id: "parent-1" },
+        tags: [],
+      },
+      {
+        id: "other-todo",
+        title: "Unrelated todo",
+        content: "",
+        type: "todo",
+        status: "active",
+        priority_score: 0.5,
+        confidence_score: null,
+        needs_review: false,
+        created_at: new Date().toISOString(),
+        metadata: {},
+        tags: [],
+      },
+    ];
+
+    // Every filter that returns active items must exclude subtasks.
+    expect(filterBoardItems(items as never, "all", null).map((i) => i.id)).toEqual(["parent-1", "other-todo"]);
+    expect(filterBoardItems(items as never, "active", null).map((i) => i.id)).toEqual(["parent-1", "other-todo"]);
+    expect(filterBoardItems(items as never, "todo", null).map((i) => i.id)).toEqual(["parent-1", "other-todo"]);
   });
 });

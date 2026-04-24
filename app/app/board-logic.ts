@@ -13,6 +13,20 @@ export function isTrash(item: InboxItem) {
   return item.status === "archived" && typeof metadata.deleted_at === "string";
 }
 
+/**
+ * Subtasks (items with metadata.parent_item_id) should NOT appear as standalone
+ * cards on the main board or in My Day lists. They are rendered inside the
+ * parent item's SubtaskTreePanel in the detail view.
+ *
+ * Bug history: without this filter, "Add subtask" silently made subtasks appear
+ * as their own board cards, which looked like the parent had "disappeared" and
+ * cluttered lanes. See progress.md 2026-04-24.
+ */
+export function isSubtask(item: InboxItem): boolean {
+  const metadata = asMetadata(item.metadata);
+  return typeof metadata.parent_item_id === "string" && metadata.parent_item_id.length > 0;
+}
+
 export function getDragActivationDistance() {
   return 5;
 }
@@ -28,7 +42,9 @@ export function shouldHideFromInitialBoard(item: InboxItem) {
 }
 
 export function filterBoardItems(items: InboxItem[], activeFilter: FilterKey, activeTagFilter: string | null) {
-  const base = items.filter((item) => !isTrash(item));
+  // Always exclude trash and subtasks from every board lane. Subtasks render
+  // only inside the parent's DetailPanel → SubtaskTreePanel.
+  const base = items.filter((item) => !isTrash(item) && !isSubtask(item));
 
   let filtered: InboxItem[];
   if (activeFilter === "all") {

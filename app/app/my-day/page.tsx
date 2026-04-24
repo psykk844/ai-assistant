@@ -35,15 +35,24 @@ export default async function MyDayPage() {
 
   const items = ((allItems ?? []) as InboxItem[]).map(normalizeItemTags);
 
-  // Today lane: priority_score >= 0.85
-  const todayItems = items.filter((i) => i.priority_score >= 0.85);
+  // Helper: subtasks (items with parent_item_id) should not appear as standalone
+  // cards — they render inside the parent's tree. Keep allActiveItems intact so
+  // buildSubtaskTree can find them, but exclude them from flat lane lists.
+  const isSubtask = (i: InboxItem) => {
+    const m = (i.metadata as Record<string, unknown> | null | undefined) ?? {};
+    return typeof m.parent_item_id === "string" && (m.parent_item_id as string).length > 0;
+  };
+
+  // Today lane: priority_score >= 0.85, top-level only
+  const todayItems = items.filter((i) => i.priority_score >= 0.85 && !isSubtask(i));
 
   // Overdue: Today items created before today
   const overdueItems = todayItems.filter((i) => i.created_at.slice(0, 10) < today);
 
-  // Stale: Next/Backlog items not updated in 5+ days
+  // Stale: Next/Backlog items not updated in 5+ days, top-level only
   const staleItems = items.filter((i) => {
     if (i.priority_score >= 0.85) return false;
+    if (isSubtask(i)) return false;
     const updated = i.updated_at ?? i.created_at;
     return updated < fiveDaysAgo;
   }).slice(0, 5);

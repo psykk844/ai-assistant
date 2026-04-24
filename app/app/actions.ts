@@ -853,7 +853,7 @@ export async function createSubtaskFromSuggestion(formData: FormData) {
       title: text.slice(0, 90),
       content: text,
       status: "active",
-      priority_score: 0.7,
+      priority_score: 0.4, // backlog; subtasks render in parent tree, not on board
       confidence_score: 0.9,
       needs_review: false,
       metadata: { parent_item_id: parentId, generated_from: "ai-suggested-action" },
@@ -1008,10 +1008,12 @@ export async function createSubtask(parentId: string, title: string) {
   const supabase = createAdminClient();
   const userId = await resolveSessionUserId();
 
-  // Fetch parent to inherit lane + type
+  // Fetch parent to inherit type only. We deliberately do NOT inherit
+  // priority_score — subtasks always land in backlog (0.4) so that if the
+  // board's subtask filter ever regresses, they won't clutter Today/Next.
   const { data: parent } = await supabase
     .from("items")
-    .select("type, priority_score")
+    .select("type")
     .eq("id", parentId)
     .single();
 
@@ -1021,7 +1023,7 @@ export async function createSubtask(parentId: string, title: string) {
     title,
     content: "",
     status: "active",
-    priority_score: parent?.priority_score ?? 0.5,
+    priority_score: 0.4, // backlog; subtasks never inherit parent lane
     confidence_score: null,
     needs_review: false,
     // NOTE: `items` table has no `tags` column — tags live in metadata.tags.

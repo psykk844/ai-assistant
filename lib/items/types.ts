@@ -30,6 +30,12 @@ export type ItemMetadata = {
   recurrence?: RecurrenceConfig;
   subtask_order?: string[]; // ordered child IDs for manual reorder
   link_summary?: LinkSummary;
+  /**
+   * User-curated position within a My Day lane (today or next).
+   * Lower = higher in the list. Ties broken by priority_score desc then created_at desc.
+   * Absent → item sorts after any explicitly-ordered items in the same lane.
+   */
+  my_day_order?: number;
   [key: string]: unknown;
 };
 

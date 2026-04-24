@@ -8,6 +8,7 @@ import { buildPreferenceContext, recordCorrection } from "@/lib/smart/user-prefe
 import { requireHardcodedSession, clearHardcodedSession } from "@/lib/auth/session";
 import { resolveSessionUserId } from "@/lib/auth/session-user";
 import { laneToPriority, type LaneKey } from "@/lib/items/lane";
+import { planMyDayReorder } from "@/lib/items/my-day-plan";
 import { indexItemsInVectorStore } from "@/lib/items/embeddings";
 import { extractUrl, fetchLinkSummary } from "@/lib/items/link-summary";
 import { splitInboxChunks } from "@/lib/items/split-chunks";
@@ -1064,6 +1065,84 @@ export async function reorderSubtasks(parentId: string, orderedIds: string[]) {
   await supabase.from("items").update({
     metadata: { ...currentMeta, subtask_order: orderedIds },
   }).eq("id", parentId);
+
+  revalidatePath("/app");
+  revalidatePath("/app/my-day");
+}
+
+/**
+ * Apply a My Day drag-and-drop reorder. Computes the cascade plan
+ * (see lib/items/my-day-plan.ts) and writes all patches in parallel.
+ *
+ * Each patch updates: priority_score (→ lane band) and metadata.my_day_order.
+ * Items cascaded out of Next 5 go to "upcoming" lane with order cleared.
+ */
+export async function reorderMyDayItems(input: {
+  draggedId: string;
+  targetSection: "top5" | "next5";
+  targetIndex: number;
+}) {
+  await requireHardcodedSession();
+  const { draggedId, targetSection, targetIndex } = input;
+  if (!draggedId || (targetSection !== "top5" && targetSection !== "next5")) return;
+
+  const supabase = createAdminClient();
+  const userId = await resolveSessionUserId();
+
+  // Load all top-level active items so the plan is accurate.
+  const { data, error } = await supabase
+    .from("items")
+    .select("id, type, title, content, status, priority_score, confidence_score, needs_review, created_at, updated_at, metadata")
+    .eq("user_id", userId)
+    .eq("status", "active");
+
+  if (error) {
+    console.error("[reorderMyDayItems] failed to load items", error);
+    return;
+  }
+
+  // Exclude subtasks from the plan (they live under parents, not on My Day)
+  const topLevel = (data ?? []).filter((it) => {
+    const m = (it.metadata as Record<string, unknown> | null) ?? {};
+    return !(typeof m.parent_item_id === "string" && m.parent_item_id.length > 0);
+  }) as unknown as Parameters<typeof planMyDayReorder>[0];
+
+  const patches = planMyDayReorder(topLevel, draggedId, targetSection, targetIndex);
+  if (patches.length === 0) {
+    return;
+  }
+
+  // Build an id → existing metadata map for patches (we merge, not overwrite)
+  const metaById = new Map<string, Record<string, unknown>>();
+  for (const row of data ?? []) {
+    const m = (row.metadata as Record<string, unknown> | null) ?? {};
+    metaById.set(row.id as string, m);
+  }
+
+  await Promise.all(
+    patches.map(async (patch) => {
+      const existingMeta = { ...(metaById.get(patch.id) ?? {}) };
+      if (Number.isNaN(patch.my_day_order)) {
+        // Cascade out to upcoming: clear my_day_order
+        delete existingMeta.my_day_order;
+      } else {
+        existingMeta.my_day_order = patch.my_day_order;
+      }
+      const newPriority = laneToPriority(patch.targetLane);
+      const { error: updateError } = await supabase
+        .from("items")
+        .update({
+          priority_score: newPriority,
+          metadata: existingMeta,
+        })
+        .eq("id", patch.id)
+        .eq("user_id", userId);
+
+      if (updateError) {
+        console.error("[reorderMyDayItems] patch failed", { patch, updateError });
+      }
+    }),
+  );
 
   revalidatePath("/app");
   revalidatePath("/app/my-day");

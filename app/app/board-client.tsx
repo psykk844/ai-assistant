@@ -100,7 +100,7 @@ type FilterKey =
   | "link"
   | "trash";
 
-const LANE_ORDER: LaneKey[] = ["today", "next", "backlog"];
+const LANE_ORDER: LaneKey[] = ["today", "next", "upcoming", "backlog"];
 
 function typeStyles(type: InboxItem["type"]) {
   if (type === "todo") return "bg-blue-300/20 text-blue-200 border-blue-300/30";
@@ -111,12 +111,14 @@ function typeStyles(type: InboxItem["type"]) {
 function laneLabel(lane: LaneKey) {
   if (lane === "today") return "Today";
   if (lane === "next") return "Next Up";
+  if (lane === "upcoming") return "Upcoming";
   return "Backlog";
 }
 
 function laneColor(lane: LaneKey) {
   if (lane === "today") return "var(--lane-today)";
   if (lane === "next") return "var(--lane-next)";
+  if (lane === "upcoming") return "var(--lane-upcoming, var(--lane-next))";
   return "var(--lane-backlog)";
 }
 
@@ -274,6 +276,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
     const laneMap: Record<LaneKey, InboxItem[]> = {
       today: [],
       next: [],
+      upcoming: [],
       backlog: [],
     };
 
@@ -373,7 +376,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
     const fromLane = laneFromItem(draggedItem);
 
     let toLane: LaneKey | null = null;
-    if (overId === "today" || overId === "next" || overId === "backlog") {
+    if (overId === "today" || overId === "next" || overId === "upcoming" || overId === "backlog") {
       toLane = overId;
     } else {
       const overItem = boardItems.find((item) => item.id === overId);
@@ -389,7 +392,11 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
             ? {
                 ...item,
                 status: "active" as const,
-                priority_score: toLane === "today" ? 0.85 : toLane === "next" ? 0.7 : 0.4,
+                priority_score:
+                  toLane === "today" ? 0.85
+                  : toLane === "next" ? 0.7
+                  : toLane === "upcoming" ? 0.55
+                  : 0.4,
               }
             : item,
         ),
@@ -1526,6 +1533,7 @@ function DetailPanel({
               <select name="lane" defaultValue={lane} className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2">
                 <option value="today">Today</option>
                 <option value="next">Next Up</option>
+                <option value="upcoming">Upcoming</option>
                 <option value="backlog">Backlog</option>
               </select>
             </label>
@@ -1716,6 +1724,7 @@ function BulkActionBar({
         <option value="" disabled>Move to lane</option>
         <option value="today">Today</option>
         <option value="next">Next Up</option>
+        <option value="upcoming">Upcoming</option>
         <option value="backlog">Backlog</option>
       </select>
       <div className="relative">

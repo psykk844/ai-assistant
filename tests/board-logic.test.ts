@@ -325,4 +325,22 @@ describe("board logic regressions", () => {
     expect(filterBoardItems(items as never, "active", null).map((i) => i.id)).toEqual(["parent-1", "other-todo"]);
     expect(filterBoardItems(items as never, "todo", null).map((i) => i.id)).toEqual(["parent-1", "other-todo"]);
   });
+
+  // REGRESSION: subtask checkboxes on My Day and the board's SubtaskTreePanel
+  // must send the form field named "status" (matching updateItemStatus), NOT
+  // "newStatus". Previously both used "newStatus" → the action's validation
+  // rejected the call silently, making the checkboxes do nothing.
+  // See progress.md 2026-04-24.
+  it("subtask checkbox clients send form field named 'status' (not 'newStatus')", async () => {
+    const fs = await import("node:fs/promises");
+    const myDay = await fs.readFile(resolve(process.cwd(), "app/app/my-day/my-day-client.tsx"), "utf8");
+    const subtaskTree = await fs.readFile(resolve(process.cwd(), "app/app/subtask-tree.tsx"), "utf8");
+
+    for (const [name, source] of [["my-day-client", myDay], ["subtask-tree", subtaskTree]] as const) {
+      // Must use the correct field name
+      expect(source, `${name} should set form field "status"`).toMatch(/form\.set\(\s*["']status["']/);
+      // Must NOT use the buggy field name
+      expect(source, `${name} must not set form field "newStatus"`).not.toMatch(/form\.set\(\s*["']newStatus["']/);
+    }
+  });
 });

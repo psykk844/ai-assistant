@@ -32,11 +32,13 @@ export function SubtaskTreePanel({ itemId, allItems }: SubtaskTreePanelProps) {
     });
   };
 
-  const handleComplete = (id: string) => {
+  const handleComplete = (id: string, currentStatus: string) => {
+    // Toggle: completed → active; anything else → completed
+    const nextStatus = currentStatus === "completed" ? "active" : "completed";
     startTransition(async () => {
       const form = new FormData();
       form.set("itemId", id);
-      form.set("newStatus", "completed");
+      form.set("status", nextStatus);
       await updateItemStatus(form);
       router.refresh();
     });
@@ -66,12 +68,13 @@ export function SubtaskTreePanel({ itemId, allItems }: SubtaskTreePanelProps) {
             <span className="w-4" />
           )}
           <button
-            onClick={() => handleComplete(node.item.id)}
+            onClick={() => handleComplete(node.item.id, node.item.status)}
             className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${
               node.item.status === "completed"
                 ? "bg-[var(--success)] border-[var(--success)] text-white"
                 : "border-[var(--border)] hover:border-[var(--accent)]"
             }`}
+            aria-label={node.item.status === "completed" ? "Reopen subtask" : "Complete subtask"}
           >
             {node.item.status === "completed" && "✓"}
           </button>

@@ -222,7 +222,19 @@ export async function updateItemStatus(formData: FormData) {
   const itemId = String(formData.get("itemId") ?? "").trim();
   const status = String(formData.get("status") ?? "").trim();
 
-  if (!itemId || !ALLOWED_STATUSES.has(status)) return;
+  if (!itemId || !ALLOWED_STATUSES.has(status)) {
+    // Visible error so client-side field-name typos (e.g. "newStatus") don't
+    // silently no-op. Previously this branch swallowed the call → clicking
+    // the subtask checkbox did nothing. See progress.md 2026-04-24.
+    console.error("[updateItemStatus] invalid input — no-op", {
+      itemId,
+      status,
+      hasItemId: !!itemId,
+      statusAllowed: ALLOWED_STATUSES.has(status),
+      formDataKeys: Array.from(formData.keys()),
+    });
+    return;
+  }
 
   try {
     await requireHardcodedSession();

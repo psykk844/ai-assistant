@@ -58,11 +58,13 @@ export function MyDayClient({
     localStorage.setItem(cacheKey, text);
   }, [todayItems, overdueItems, staleItems]);
 
-  const handleComplete = useCallback((itemId: string) => {
+  const handleComplete = useCallback((itemId: string, currentStatus: string) => {
+    // Toggle: completed → active; anything else → completed
+    const nextStatus = currentStatus === "completed" ? "active" : "completed";
     startTransition(async () => {
       const form = new FormData();
       form.set("itemId", itemId);
-      form.set("newStatus", "completed");
+      form.set("status", nextStatus);
       await updateItemStatus(form);
       router.refresh();
     });
@@ -119,12 +121,13 @@ export function MyDayClient({
           )}
 
           <button
-            onClick={() => handleComplete(node.item.id)}
+            onClick={() => handleComplete(node.item.id, node.item.status)}
             className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors duration-140 ${
               node.item.status === "completed"
                 ? "bg-[var(--success)] border-[var(--success)] text-white"
                 : "border-[var(--border)] hover:border-[var(--accent)]"
             }`}
+            aria-label={node.item.status === "completed" ? "Reopen task" : "Complete task"}
           >
             {node.item.status === "completed" && "✓"}
           </button>

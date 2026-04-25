@@ -6,7 +6,7 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { memo, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -412,6 +412,34 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
     }
   }
 
+  const handleToggleStatus = useMemo(
+    () => (itemId: string, currentStatus: InboxItem["status"]) => {
+      const nextStatus = currentStatus === "completed" ? "active" : "completed";
+
+      setStatusMessage(nextStatus === "completed" ? "Item marked completed." : "Item reopened.");
+      setItems((prev) =>
+        prev.map((entry) =>
+          entry.id === itemId
+            ? {
+                ...entry,
+                status: nextStatus,
+              }
+            : entry,
+        ),
+      );
+
+      startTransition(async () => {
+        const formData = new FormData();
+        formData.set("itemId", itemId);
+        formData.set("status", nextStatus);
+
+        await updateItemStatus(formData);
+        router.refresh();
+      });
+    },
+    [router],
+  );
+
   function normalizeTag(tag: string) {
     return tag.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
   }
@@ -759,30 +787,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                     lane={lane}
                     items={byLane[lane]}
                     onOpenItem={setSelectedItemId}
-                    onToggleStatus={(itemId, currentStatus) => {
-                      const nextStatus = currentStatus === "completed" ? "active" : "completed";
-
-                      setStatusMessage(nextStatus === "completed" ? "Item marked completed." : "Item reopened.");
-                      setItems((prev) =>
-                        prev.map((entry) =>
-                          entry.id === itemId
-                            ? {
-                                ...entry,
-                                status: nextStatus,
-                              }
-                            : entry,
-                        ),
-                      );
-
-                      startTransition(async () => {
-                        const formData = new FormData();
-                        formData.set("itemId", itemId);
-                        formData.set("status", nextStatus);
-
-                        await updateItemStatus(formData);
-                        router.refresh();
-                      });
-                    }}
+                    onToggleStatus={handleToggleStatus}
                     pending={isPending}
                     selectedIds={selectedIds}
                     onToggleSelected={toggleSelected}
@@ -1013,16 +1018,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
   );
 }
 
-function LaneColumn({
-  lane,
-  items,
-  onOpenItem,
-  onToggleStatus,
-  pending,
-  selectedIds,
-  onToggleSelected,
-  onTagSelect,
-}: {
+type LaneColumnProps = {
   lane: LaneKey;
   items: InboxItem[];
   onOpenItem: (itemId: string) => void;
@@ -1031,7 +1027,18 @@ function LaneColumn({
   selectedIds: string[];
   onToggleSelected: (itemId: string) => void;
   onTagSelect: (tag: string | null) => void;
-}) {
+};
+
+const LaneColumn = memo(function LaneColumn({
+  lane,
+  items,
+  onOpenItem,
+  onToggleStatus,
+  pending,
+  selectedIds,
+  onToggleSelected,
+  onTagSelect,
+}: LaneColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: lane });
 
   return (
@@ -1060,18 +1067,9 @@ function LaneColumn({
       )}
     </div>
   );
-}
+});
 
-function SortableCard({
-  item,
-  onOpen,
-  onToggleStatus,
-  pending,
-  index,
-  selected,
-  onToggleSelected,
-  onTagSelect,
-}: {
+type SortableCardProps = {
   item: InboxItem;
   onOpen: () => void;
   onToggleStatus: (itemId: string, currentStatus: InboxItem["status"]) => void;
@@ -1080,7 +1078,18 @@ function SortableCard({
   selected: boolean;
   onToggleSelected: () => void;
   onTagSelect: (tag: string | null) => void;
-}) {
+};
+
+const SortableCard = memo(function SortableCard({
+  item,
+  onOpen,
+  onToggleStatus,
+  pending,
+  index,
+  selected,
+  onToggleSelected,
+  onTagSelect,
+}: SortableCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const dragHandleProps = {
     ...attributes,
@@ -1183,7 +1192,7 @@ function SortableCard({
       </div>
     </li>
   );
-}
+});
 
 /** Rich rendering for link items with summaries */
 function LinkCardBody({

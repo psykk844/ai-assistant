@@ -44,6 +44,11 @@ describe("phase1 lane picker", () => {
     expect(source).toMatch(/form\.set\(\s*["']lane["']/);
   });
 
+  it("my-day completion does not use optimistic setItems churn", async () => {
+    const source = await readFile(resolve(process.cwd(), "app/app/my-day/my-day-client.tsx"), "utf8");
+    expect(source).not.toMatch(/setItems\(\(prev\)\s*=>\s*prev\.map\(\(i\)/);
+  });
+
   it("captureInboxItem reads lane from form data", async () => {
     const source = await readFile(resolve(process.cwd(), "app/app/actions.ts"), "utf8");
     expect(source).toMatch(/formData\.get\(\s*["']lane["']/);

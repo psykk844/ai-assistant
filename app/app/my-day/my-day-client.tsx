@@ -125,8 +125,7 @@ export function MyDayClient({
 
   const handleComplete = useCallback((itemId: string, currentStatus: string) => {
     const nextStatus = currentStatus === "completed" ? "active" : "completed";
-    // Optimistic update
-    setItems((prev) => prev.map((i) => (i.id === itemId ? { ...i, status: nextStatus as typeof i.status } : i)));
+    // Phase 2: avoid optimistic full-list mutation on mobile to reduce render churn.
     startTransition(async () => {
       const form = new FormData();
       form.set("itemId", itemId);

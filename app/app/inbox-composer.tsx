@@ -3,6 +3,7 @@
 import { useFormStatus } from "react-dom";
 import { useState, useCallback, useRef, useTransition } from "react";
 import { splitInboxChunks, countChunks } from "@/lib/items/split-chunks";
+import { LANE_LABELS, type LaneKey } from "@/lib/items/lane";
 import { ChunkPreviewModal } from "./chunk-preview-modal";
 
 export function InboxComposer({
@@ -18,6 +19,7 @@ export function InboxComposer({
   const [showPreview, setShowPreview] = useState(false);
   const [pendingChunks, setPendingChunks] = useState<string[]>([]);
   const [rawContent, setRawContent] = useState("");
+  const [selectedLane, setSelectedLane] = useState<"" | LaneKey>("");
   const formRef = useRef<HTMLFormElement>(null);
   const chunksInputRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
@@ -53,6 +55,7 @@ export function InboxComposer({
       const fd = new FormData();
       fd.set("content", rawContent.trim());
       fd.set("chunks", JSON.stringify(finalChunks));
+      if (selectedLane) fd.set("lane", selectedLane);
 
       startTransition(() => {
         action(fd);
@@ -68,7 +71,7 @@ export function InboxComposer({
         if (ta) ta.value = "";
       }
     },
-    [rawContent, action, textareaRef],
+    [rawContent, selectedLane, action, textareaRef],
   );
 
   const handleCancel = useCallback(() => {
@@ -87,7 +90,22 @@ export function InboxComposer({
           placeholder="Drop a thought, task, or URL...\n\nOne item per line, or separate with commas."
           className="h-28 w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
         />
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+            <span>Lane</span>
+            <select
+              name="lane"
+              value={selectedLane}
+              onChange={(e) => setSelectedLane(e.target.value as "" | LaneKey)}
+              className="rounded-md border border-[var(--border)] bg-[var(--bg-muted)] px-2 py-1 text-xs text-[var(--text)]"
+            >
+              <option value="">Auto</option>
+              <option value="today">{LANE_LABELS.today}</option>
+              <option value="next">{LANE_LABELS.next}</option>
+              <option value="upcoming">{LANE_LABELS.upcoming}</option>
+              <option value="backlog">{LANE_LABELS.backlog}</option>
+            </select>
+          </label>
           <SubmitBtn count={chunkCount} isPending={isPending} className={buttonClassName} />
           {chunkCount > 1 && (
             <span className="text-xs text-[var(--text-muted)]">

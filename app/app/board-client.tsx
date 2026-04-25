@@ -46,7 +46,7 @@ import {
 } from "./actions";
 import { laneFromItem, type LaneKey } from "@/lib/items/lane";
 import type { InboxItem, LinkSummary, RecurrenceConfig } from "@/lib/items/types";
-import { asMetadata, filterBoardItems, getDragActivationDistance, getDragHandleLabel, isTrash } from "./board-logic";
+import { asMetadata, filterBoardItems, getDragActivationDistance, getDragHandleLabel, isTrash, sortItemsForBoardLane } from "./board-logic";
 import { RecurrencePicker } from "./recurrence-picker";
 import { SubtaskTreePanel } from "./subtask-tree";
 
@@ -282,6 +282,10 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
 
     for (const item of boardItems) {
       laneMap[laneFromItem(item)].push(item);
+    }
+
+    for (const lane of LANE_ORDER) {
+      laneMap[lane] = sortItemsForBoardLane(lane, laneMap[lane]);
     }
 
     return laneMap;

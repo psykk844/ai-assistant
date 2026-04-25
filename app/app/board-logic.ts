@@ -1,4 +1,5 @@
 import type { InboxItem, ItemMetadata } from "@/lib/items/types";
+import type { LaneKey } from "@/lib/items/lane";
 import { readItemTags } from "./item-tags";
 
 type FilterKey = "all" | "active" | "completed" | "archived" | "todo" | "note" | "link" | "trash";
@@ -69,4 +70,16 @@ export function normalizeItemTags<T extends { tags?: string[] | null }>(item: T)
     ...item,
     tags: readItemTags(item as T & { metadata?: Record<string, unknown> }),
   };
+}
+
+/**
+ * Board lane sorting policy:
+ * - today / next: preserve existing order from upstream query and interactions
+ * - upcoming / backlog: newest-added first for easier backlog triage
+ */
+export function sortItemsForBoardLane(lane: LaneKey, items: InboxItem[]): InboxItem[] {
+  if (lane === "upcoming" || lane === "backlog") {
+    return [...items].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  return items;
 }

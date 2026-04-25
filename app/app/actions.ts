@@ -7,7 +7,7 @@ import { classifySmartInput } from "@/lib/smart/classify-with-ai";
 import { buildPreferenceContext, recordCorrection } from "@/lib/smart/user-preferences";
 import { requireHardcodedSession, clearHardcodedSession } from "@/lib/auth/session";
 import { resolveSessionUserId } from "@/lib/auth/session-user";
-import { laneToPriority, type LaneKey } from "@/lib/items/lane";
+import { isValidLane, laneToPriority, type LaneKey } from "@/lib/items/lane";
 import { planMyDayReorder } from "@/lib/items/my-day-plan";
 import { indexItemsInVectorStore } from "@/lib/items/embeddings";
 import { extractUrl, fetchLinkSummary } from "@/lib/items/link-summary";
@@ -101,6 +101,9 @@ export async function captureInboxItem(formData: FormData) {
   const raw = String(formData.get("content") ?? "").trim();
   if (!raw) return;
 
+  const rawLane = String(formData.get("lane") ?? "").trim();
+  const selectedLane: LaneKey | null = isValidLane(rawLane) ? rawLane : null;
+
   await requireHardcodedSession();
 
   // Accept pre-split chunks from the preview modal, or auto-split
@@ -137,7 +140,7 @@ export async function captureInboxItem(formData: FormData) {
     content: chunk,
     title: classifications[i].title,
     status: "active" as const,
-    priority_score: classifications[i].priorityScore,
+    priority_score: selectedLane ? laneToPriority(selectedLane) : classifications[i].priorityScore,
     confidence_score: classifications[i].confidenceScore,
     needs_review: classifications[i].needsReview,
     metadata: classifications[i].metadata,

@@ -23,6 +23,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { InboxItem } from "@/lib/items/types";
 import { buildSubtaskTree, getSubtaskProgress, type TreeNode } from "@/lib/items/subtask-tree";
 import { computeMyDayPlan, MY_DAY_CAP } from "@/lib/items/my-day-plan";
+import { LANE_LABELS, type LaneKey } from "@/lib/items/lane";
 import { buildFallbackBriefing } from "./briefing";
 import {
   captureInboxItem,
@@ -54,6 +55,7 @@ export function MyDayClient({
   const [briefingText, setBriefingText] = useState<string | null>(null);
   const [briefingOpen, setBriefingOpen] = useState(true);
   const [quickAddText, setQuickAddText] = useState("");
+  const [quickAddLane, setQuickAddLane] = useState<LaneKey>("today");
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   // Optimistic state: we mirror the server items so DnD feels instant.
@@ -138,12 +140,13 @@ export function MyDayClient({
     if (!quickAddText.trim()) return;
     const form = new FormData();
     form.set("content", quickAddText.trim());
+    form.set("lane", quickAddLane);
     startTransition(async () => {
       await captureInboxItem(form);
       setQuickAddText("");
       router.refresh();
     });
-  }, [quickAddText, router]);
+  }, [quickAddText, quickAddLane, router]);
 
   const handleMoveSuggestion = useCallback((itemId: string) => {
     startTransition(async () => {
@@ -490,7 +493,7 @@ export function MyDayClient({
         )}
 
         <section className="sticky bottom-0 bg-[var(--bg)] border-t border-[var(--border)] px-0 py-4">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <input
               type="text"
               value={quickAddText}
@@ -501,9 +504,21 @@ export function MyDayClient({
                   handleQuickAdd();
                 }
               }}
-              placeholder="Quick add to Today..."
-              className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-4 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)]"
+              placeholder="Quick add task..."
+              className="min-w-[220px] flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-4 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)]"
             />
+            <select
+              name="lane"
+              value={quickAddLane}
+              onChange={(e) => setQuickAddLane(e.target.value as LaneKey)}
+              className="rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm text-[var(--text)]"
+              aria-label="Quick add lane"
+            >
+              <option value="today">{LANE_LABELS.today}</option>
+              <option value="next">{LANE_LABELS.next}</option>
+              <option value="upcoming">{LANE_LABELS.upcoming}</option>
+              <option value="backlog">{LANE_LABELS.backlog}</option>
+            </select>
             <button
               onClick={handleQuickAdd}
               disabled={isPending || !quickAddText.trim()}

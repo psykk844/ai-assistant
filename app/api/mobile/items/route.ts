@@ -38,13 +38,12 @@ export async function POST(request: NextRequest) {
     confidence_score: null,
     needs_review: false,
     metadata: {},
-    tags: [] as string[],
   };
 
   const { data, error } = await supabase
     .from("items")
     .insert(insertPayload)
-    .select("id, type, title, content, status, priority_score, confidence_score, needs_review, created_at, updated_at, metadata, tags")
+    .select("id, type, title, content, status, priority_score, confidence_score, needs_review, created_at, updated_at, metadata")
     .single();
 
   if (error || !data) {

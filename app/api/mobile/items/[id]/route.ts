@@ -19,7 +19,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
   const { data, error } = await supabase
     .from("items")
-    .select("id, type, title, content, status, priority_score, confidence_score, needs_review, created_at, updated_at, metadata, tags")
+    .select("id, type, title, content, status, priority_score, confidence_score, needs_review, created_at, updated_at, metadata")
     .eq("user_id", auth.userId)
     .eq("id", id)
     .single();

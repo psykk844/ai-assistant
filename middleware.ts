@@ -26,7 +26,7 @@ function applyMobileCors(request: NextRequest, response: NextResponse) {
 
   response.headers.set("Access-Control-Allow-Origin", allowOrigin);
   response.headers.set("Access-Control-Allow-Headers", "Content-Type, x-mobile-dev-key");
-  response.headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  response.headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
   response.headers.set("Vary", "Origin");
   return response;
 }

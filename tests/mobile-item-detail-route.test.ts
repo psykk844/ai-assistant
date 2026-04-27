@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let selectedColumns = "";
 let insertedPayload: Record<string, unknown> | null = null;
+let updatedPayload: Record<string, unknown> | null = null;
 
 const mockItem = {
   id: "item-1",
@@ -28,12 +29,27 @@ vi.mock("@/lib/supabase/admin", () => ({
         insertedPayload = payload;
         return query;
       },
+      update(payload: Record<string, unknown>) {
+        updatedPayload = payload;
+        return query;
+      },
       eq() {
         return query;
       },
       single() {
-        if (selectedColumns.includes("tags") || insertedPayload?.tags) {
+        if (selectedColumns.includes("tags") || insertedPayload?.tags || updatedPayload?.tags) {
           return Promise.resolve({ data: null, error: { message: "column items.tags does not exist" } });
+        }
+
+        if (updatedPayload) {
+          return Promise.resolve({
+            data: {
+              ...mockItem,
+              ...updatedPayload,
+              metadata: updatedPayload.metadata ?? mockItem.metadata,
+            },
+            error: null,
+          });
         }
 
         return Promise.resolve({ data: mockItem, error: null });
@@ -52,6 +68,7 @@ describe("mobile item detail route", () => {
   beforeEach(() => {
     selectedColumns = "";
     insertedPayload = null;
+    updatedPayload = null;
     process.env.MOBILE_DEV_API_KEY = "test-mobile-key";
     process.env.MOBILE_DEV_USER_ID = "user-1";
   });
@@ -95,6 +112,47 @@ describe("mobile item detail route", () => {
       id: "item-1",
       title: "Open detail task",
       tags: ["mobile"],
+    });
+  });
+
+  it("updates mobile-editable fields without writing or selecting the missing tags column", async () => {
+    const { PATCH } = await import("../app/api/mobile/items/[id]/route");
+    const request = new Request("http://localhost/api/mobile/items/item-1", {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        "x-mobile-dev-key": "test-mobile-key",
+      },
+      body: JSON.stringify({
+        title: "Updated title",
+        content: "Updated content",
+        lane: "next",
+        status: "active",
+        priority_score: 0.75,
+        tags: ["edited", "phone"],
+      }),
+    });
+
+    const response = await PATCH(request, { params: Promise.resolve({ id: "item-1" }) });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(updatedPayload).toMatchObject({
+      title: "Updated title",
+      content: "Updated content",
+      status: "active",
+      priority_score: 0.75,
+      metadata: { tags: ["edited", "phone"] },
+    });
+    expect(updatedPayload).not.toHaveProperty("tags");
+    expect(selectedColumns).not.toContain("tags");
+    expect(body).toMatchObject({
+      id: "item-1",
+      title: "Updated title",
+      content: "Updated content",
+      status: "active",
+      lane: "next",
+      tags: ["edited", "phone"],
     });
   });
 });

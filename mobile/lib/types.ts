@@ -38,3 +38,7 @@ export type MobileBacklogQuery = {
   limit: number;
   search?: string;
 };
+
+export type MobileItemUpdateInput = Partial<
+  Pick<MobileItemPreview, "title" | "content" | "lane" | "status" | "priority_score" | "tags">
+>;

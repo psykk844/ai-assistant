@@ -1,6 +1,6 @@
 import { buildMobileBacklogPage, buildMobileHomePayload } from "../shared/mobile-contracts";
 import { laneFromItem, laneToPriority, type LaneKey } from "../shared/lane";
-import type { MobileBacklogPage, MobileBacklogQuery, MobileHomePayload, MobileItemPreview } from "./types";
+import type { MobileBacklogPage, MobileBacklogQuery, MobileHomePayload, MobileItemPreview, MobileItemUpdateInput } from "./types";
 import type { InboxItem } from "../shared/types";
 
 function makeMockItem(id: string, priority: number, createdAt: string, order?: number): InboxItem {
@@ -171,6 +171,32 @@ export async function getMobileItemById(itemId: string): Promise<MobileItemPrevi
 
   const item = mockItems.find((candidate) => candidate.id === itemId);
   return item ? toMobilePreview(item) : null;
+}
+
+export async function updateMobileItem(itemId: string, input: MobileItemUpdateInput): Promise<MobileItemPreview> {
+  if (canUseBackendApi()) {
+    return requestMobileApi<MobileItemPreview>(`/api/mobile/items/${itemId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+  }
+
+  const item = mockItems.find((candidate) => candidate.id === itemId);
+  if (!item) {
+    throw new Error(`Mobile item ${itemId} not found`);
+  }
+
+  if (typeof input.title === "string") item.title = input.title;
+  if (typeof input.content === "string") item.content = input.content;
+  if (typeof input.status === "string") item.status = input.status;
+  if (input.lane) {
+    item.status = "active";
+    item.priority_score = laneToPriority(input.lane);
+  }
+  if (typeof input.priority_score === "number") item.priority_score = input.priority_score;
+  if (Array.isArray(input.tags)) item.tags = input.tags;
+
+  return toMobilePreview(item);
 }
 
 export async function completeItem(itemId: string): Promise<void> {

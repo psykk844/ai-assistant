@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "AI Assistant Mobile",
+    "slug": "ai-assistant-mobile",
+    "scheme": "ai-assistant-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "experiments": {
+      "typedRoutes": true
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}

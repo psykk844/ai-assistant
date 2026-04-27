@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 const DEFAULT_HARDCODED_EMAIL = "sam@local.dev";
 
 export async function resolveSessionUserId() {
-  const configuredUserId = process.env.HARDCODED_USER_ID?.trim();
+  const configuredUserId = process.env.MOBILE_DEV_USER_ID?.trim() || process.env.HARDCODED_USER_ID?.trim();
   if (configuredUserId) return configuredUserId;
 
   const admin = createAdminClient();

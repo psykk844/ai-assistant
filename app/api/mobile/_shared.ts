@@ -4,7 +4,7 @@ import { resolveSessionUserId } from "@/lib/auth/session-user";
 import type { InboxItem } from "@/lib/items/types";
 
 const MOBILE_CORS_ALLOW_HEADERS = "Content-Type, x-mobile-dev-key";
-const MOBILE_CORS_ALLOW_METHODS = "GET, POST, OPTIONS";
+const MOBILE_CORS_ALLOW_METHODS = "GET, POST, PATCH, OPTIONS";
 
 async function hasMobileApiAuth(request?: Request) {
   const expectedDevKey = process.env.MOBILE_DEV_API_KEY?.trim();

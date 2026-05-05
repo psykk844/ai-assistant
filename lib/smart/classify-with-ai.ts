@@ -34,6 +34,12 @@ function parseJsonBlock(input: string): AiPayload | null {
   }
 }
 
+function getClassifyTimeoutMs() {
+  const configured = Number(process.env.OARS_CLASSIFY_TIMEOUT_MS ?? 8000);
+  if (!Number.isFinite(configured) || configured <= 0) return 8000;
+  return configured;
+}
+
 function normalizeClassification(raw: AiPayload | null, fallback: Classification): Classification {
   if (!raw) return fallback;
 
@@ -79,9 +85,17 @@ export async function classifySmartInput(content: string, userPreferenceContext?
     systemParts.push("", userPreferenceContext);
   }
 
+  const controller = new AbortController();
+  let didTimeout = false;
+  const timeout = setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, getClassifyTimeoutMs());
+
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
@@ -136,9 +150,11 @@ export async function classifySmartInput(content: string, userPreferenceContext?
       metadata: {
         ...fallback.metadata,
         source: "stub-classifier",
-        fallbackReason: "oars-request-failed",
+        fallbackReason: didTimeout ? "oars-request-timeout" : "oars-request-failed",
         error: error instanceof Error ? error.message : "unknown",
       },
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }

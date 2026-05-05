@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { laneToPriority, type LaneKey, isValidLane } from "@/lib/items/lane";
 import { laneFromItem } from "@/lib/items/lane";
@@ -7,11 +7,11 @@ import type { InboxItem } from "@/lib/items/types";
 
 export const dynamic = "force-dynamic";
 
-export function OPTIONS(request: NextRequest) {
+export function OPTIONS(request: Request) {
   return mobileCorsPreflightResponse(request);
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   const auth = await requireMobileApiUser(request);
   if (!auth) return unauthorizedResponse(request);
 

@@ -5,7 +5,7 @@ export type LinkItem = {
   user_id: string;
   title: string | null;
   content: string;
-  type: "link";
+  type: "link" | "todo";
   status: "active" | "completed" | "archived";
   metadata?: Record<string, unknown> | null;
   created_at?: string | null;

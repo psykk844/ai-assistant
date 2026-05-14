@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   items: [] as LinkItem[],
   processed: new Map<string, Record<string, unknown>>(),
   selectedColumns: "",
+  orFilter: "",
   orderBy: null as { column: string; ascending?: boolean } | null,
   limit: 0,
   inserts: [] as Record<string, unknown>[],
@@ -54,6 +55,7 @@ describe("processLinkBatch", () => {
     state.items = [];
     state.processed = new Map();
     state.selectedColumns = "";
+    state.orFilter = "";
     state.orderBy = null;
     state.limit = 0;
     state.inserts = [];
@@ -125,6 +127,40 @@ describe("processLinkBatch", () => {
     expect(mocks.writeSuccessLinkNote).not.toHaveBeenCalled();
     expect(mocks.writeFailureLinkNote).not.toHaveBeenCalled();
     expect(state.inserts).toEqual([]);
+    expect(state.deletes).toEqual(["item-1"]);
+  });
+
+  it("archives active social media todo items", async () => {
+    state.items = [linkItem({
+      content: "https://www.facebook.com/share/p/1CgcKHNWeD/",
+      title: "Facebook shared post",
+      type: "todo",
+      metadata: {
+        contentType: "social_media_post",
+        extractedUrl: "https://www.facebook.com/share/p/1CgcKHNWeD/",
+        url: "https://www.facebook.com/share/p/1CgcKHNWeD/",
+      },
+    })];
+    mocks.extractSocialLinkWithApify.mockResolvedValue({
+      ...extractedLink(),
+      platform: "facebook",
+      originalUrl: "https://www.facebook.com/share/p/1CgcKHNWeD/",
+      normalizedUrl: "https://facebook.com/share/p/1CgcKHNWeD",
+    });
+    mocks.summarizeExtractedLink.mockResolvedValue(brief());
+    mocks.actorNameForPlatform.mockReturnValue("apify/facebook-scraper");
+    mocks.writeSuccessLinkNote.mockResolvedValue({ obsidianPath: "Links/2026-05/facebook-shared-post.md", status: "summarized" });
+
+    const { processLinkBatch } = await import("../lib/link-processing/process-batch");
+    const summary = await processLinkBatch({ now: new Date("2026-05-14T12:00:00.000Z") });
+
+    expect(summary).toEqual({ scanned: 1, processed: 1, summarized: 1, failed: 0, duplicates: 0, skipped: 0, errors: [] });
+    expect(state.orFilter).toBe("type.eq.link,metadata->>contentType.eq.social_media_post");
+    expect(mocks.extractSocialLinkWithApify).toHaveBeenCalledWith({
+      platform: "facebook",
+      originalUrl: "https://www.facebook.com/share/p/1CgcKHNWeD/",
+      normalizedUrl: "https://facebook.com/share/p/1CgcKHNWeD",
+    });
     expect(state.deletes).toEqual(["item-1"]);
   });
 
@@ -308,6 +344,10 @@ function createTableQuery(table: string) {
     eq(column: string, value: unknown) {
       filters[column] = value;
       if (mode === "delete") return deleteResult(value);
+      return this;
+    },
+    or(filter: string) {
+      state.orFilter = filter;
       return this;
     },
     order(column: string, options: { ascending?: boolean }) {

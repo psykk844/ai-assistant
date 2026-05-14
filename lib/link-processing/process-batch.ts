@@ -25,8 +25,8 @@ export async function processLinkBatch(options: BatchOptions = {}): Promise<Proc
   const { data, error } = await supabase
     .from("items")
     .select(ITEM_COLUMNS)
-    .eq("type", "link")
     .eq("status", "active")
+    .or("type.eq.link,metadata->>contentType.eq.social_media_post")
     .order("created_at", { ascending: true })
     .limit(batchLimit(options.limit));
 

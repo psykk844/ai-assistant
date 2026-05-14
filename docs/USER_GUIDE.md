@@ -351,7 +351,34 @@ So if you want faster capture than opening the full app, the widget is there for
 
 ---
 
-## 19. AI-suggested actions
+## 19. Batched social link archiving
+
+Public Reddit, X/Twitter, and Facebook links can be captured in the todo app without keeping them on the board forever.
+
+The scheduled link job:
+- finds active social link items
+- extracts public context with Apify
+- creates a detailed AI brief
+- saves a Markdown note to `Links/YYYY-MM/` in the configured Obsidian vault
+- deletes the original todo item after the note is safely written
+
+If Apify or AI cannot process a link, the job writes a failure note with the original URL and failure reason, then deletes the todo item. If Obsidian cannot be written, the todo item stays in the app so it can be retried later.
+
+Deployment environment variables:
+- `OBSIDIAN_VAULT_PATH`
+- `APIFY_TOKEN` or `APIFY`
+- `APIFY_REDDIT_ACTOR`
+- `APIFY_X_ACTOR`
+- `APIFY_FACEBOOK_ACTOR`
+- `OARS_API_KEY`
+- `LINK_PROCESS_JOB_SECRET` or existing `CRON_SECRET`
+- `LINK_BATCH_SIZE`
+
+Coolify should call `POST /api/jobs/process-links` once daily with header `Authorization: Bearer <LINK_PROCESS_JOB_SECRET or CRON_SECRET>`.
+
+---
+
+## 20. AI-suggested actions
 
 Inside an item’s detail panel, the app may show suggested next steps like:
 - break this down
@@ -364,7 +391,7 @@ You do not have to use them, but they are handy when your note is too broad.
 
 ---
 
-## 20. Typical ways to use the app
+## 21. Typical ways to use the app
 
 ### A. Quick capture system
 Use it like a brain dump bucket:
@@ -389,7 +416,7 @@ Use it for notes + links:
 
 ---
 
-## 21. If something feels wrong
+## 22. If something feels wrong
 
 Here’s the simplest mental model:
 
@@ -401,7 +428,7 @@ Here’s the simplest mental model:
 
 ---
 
-## 22. Best practices
+## 23. Best practices
 
 If you want the app to feel magical, do this:
 
@@ -414,7 +441,7 @@ If you want the app to feel magical, do this:
 
 ---
 
-## 23. Super short cheat sheet
+## 24. Super short cheat sheet
 
 ### Add stuff
 Use the Smart Inbox.
@@ -445,7 +472,7 @@ Use filters or focus a lane.
 
 ---
 
-## 24. Final mental model
+## 25. Final mental model
 
 This app is not just a note app.
 It is not just a to-do list.

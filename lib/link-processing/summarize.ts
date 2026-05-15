@@ -56,7 +56,7 @@ export async function summarizeExtractedLink(extracted: ExtractedSocialLink): Pr
       throw new RetryableSummaryError("OARS summary request timed out");
     }
 
-    throw error;
+    throw new RetryableSummaryError(`OARS summary request failed: ${errorMessage(error)}`);
   } finally {
     clearTimeout(timeout);
   }
@@ -94,6 +94,10 @@ function summaryTimeoutMs() {
 
 function isAbortError(error: unknown) {
   return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function systemPrompt() {

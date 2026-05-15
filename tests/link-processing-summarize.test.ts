@@ -152,6 +152,15 @@ describe("social link summarization", () => {
     await expect(summarizeExtractedLink(fixtureExtractedLink())).rejects.toMatchObject({ retryable: true });
   });
 
+  it("marks OARS request network failures as retryable", async () => {
+    process.env.OARS_API_KEY = "test-oars-key";
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    }));
+
+    await expect(summarizeExtractedLink(fixtureExtractedLink())).rejects.toMatchObject({ retryable: true });
+  });
+
   it("marks extracted post text and comments as untrusted source data", async () => {
     process.env.OARS_API_KEY = "test-oars-key";
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>

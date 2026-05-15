@@ -4,6 +4,7 @@ import {
   extractFirstUrl,
   extractStandaloneUrl,
   isSupportedPublicSocialUrl,
+  isSocialUrl,
   normalizeSocialUrl,
   slugifyForFilename,
 } from "../lib/link-processing/url";
@@ -85,6 +86,12 @@ describe("link processing URL utilities", () => {
     expect(normalizeSocialUrl("https://reddit.com/r/ai")).toBeNull();
     expect(normalizeSocialUrl("https://x.com/example/settings")).toBeNull();
     expect(normalizeSocialUrl("https://facebook.com/help")).toBeNull();
+  });
+
+  it("detects social hosts even when the URL shape is unsupported", () => {
+    expect(isSocialUrl("https://x.com/example/settings")).toBe(true);
+    expect(isSocialUrl("https://reddit.com/r/ai")).toBe(true);
+    expect(isSocialUrl("https://github.com/Shubhamsaboo/awesome-llm-apps")).toBe(false);
   });
 
   it("slugifies titles for Obsidian filenames", () => {

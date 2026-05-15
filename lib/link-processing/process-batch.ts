@@ -3,7 +3,7 @@ import { actorNameForPlatform, extractSocialLinkWithApify, isRetryableExtraction
 import { removeWrittenLinkNote, writeFailureLinkNote, writeSuccessLinkNote } from "./obsidian";
 import { summarizeExtractedLink } from "./summarize";
 import type { LinkItem, LinkSource, ProcessLinksSummary, SocialPlatform, WrittenLinkNote } from "./types";
-import { detectSupportedPlatform, extractStandaloneUrl, normalizeGenericUrl, normalizeSocialUrl } from "./url";
+import { detectSupportedPlatform, extractStandaloneUrl, isSocialUrl, normalizeGenericUrl, normalizeSocialUrl } from "./url";
 import { extractGenericWebLink } from "./web";
 
 type BatchOptions = { limit?: number; now?: Date };
@@ -27,7 +27,7 @@ export async function processLinkBatch(options: BatchOptions = {}): Promise<Proc
     .from("items")
     .select(ITEM_COLUMNS)
     .eq("status", "active")
-    .or("type.eq.link,metadata->>contentType.eq.social_media_post,content.ilike.http%")
+    .or("type.eq.link,metadata->>contentType.eq.social_media_post,content.ilike.%http%")
     .order("created_at", { ascending: true })
     .limit(batchLimit(options.limit));
 
@@ -222,6 +222,10 @@ function itemLink(item: LinkItem): ValidLink | null {
   if (platform) {
     const normalizedUrl = normalizeSocialUrl(originalUrl);
     return normalizedUrl ? { platform, originalUrl, normalizedUrl } : null;
+  }
+
+  if (isSocialUrl(originalUrl)) {
+    return null;
   }
 
   const normalizedUrl = normalizeGenericUrl(originalUrl);

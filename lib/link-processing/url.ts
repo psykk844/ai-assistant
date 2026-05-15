@@ -37,6 +37,17 @@ export function detectSupportedPlatform(url: string): SocialPlatform | null {
   return null;
 }
 
+export function isSocialUrl(url: string): boolean {
+  const parsed = parseUrl(url);
+
+  if (!parsed) {
+    return false;
+  }
+
+  const host = removeWww(parsed.hostname.toLowerCase());
+  return isHostOrSubdomain(host, "reddit.com") || host === "x.com" || isHostOrSubdomain(host, "twitter.com") || isHostOrSubdomain(host, "facebook.com");
+}
+
 export function isSupportedPublicSocialUrl(url: string, platform: SocialPlatform): boolean {
   const parsed = parseUrl(url);
 

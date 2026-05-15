@@ -160,7 +160,7 @@ describe("processLinkBatch", () => {
     const summary = await processLinkBatch({ now: new Date("2026-05-14T12:00:00.000Z") });
 
     expect(summary).toEqual({ scanned: 1, processed: 1, summarized: 1, failed: 0, duplicates: 0, skipped: 0, errors: [] });
-    expect(state.orFilter).toBe("type.eq.link,metadata->>contentType.eq.social_media_post,content.ilike.http%");
+    expect(state.orFilter).toBe("type.eq.link,metadata->>contentType.eq.social_media_post,content.ilike.%http%");
     expect(mocks.extractSocialLinkWithApify).toHaveBeenCalledWith({
       platform: "facebook",
       originalUrl: "https://www.facebook.com/share/p/1CgcKHNWeD/",
@@ -177,6 +177,17 @@ describe("processLinkBatch", () => {
 
     expect(summary).toEqual({ scanned: 1, processed: 0, summarized: 0, failed: 0, duplicates: 0, skipped: 1, errors: [] });
     expect(mocks.extractSocialLinkWithApify).not.toHaveBeenCalled();
+    expect(mocks.extractGenericWebLink).not.toHaveBeenCalled();
+    expect(state.deletes).toEqual([]);
+  });
+
+  it("skips unsupported standalone social URLs instead of archiving them as generic web pages", async () => {
+    state.items = [linkItem({ content: "https://x.com/example/settings" })];
+
+    const { processLinkBatch } = await import("../lib/link-processing/process-batch");
+    const summary = await processLinkBatch({ now: new Date("2026-05-14T12:00:00.000Z") });
+
+    expect(summary).toEqual({ scanned: 1, processed: 0, summarized: 0, failed: 0, duplicates: 0, skipped: 1, errors: [] });
     expect(mocks.extractGenericWebLink).not.toHaveBeenCalled();
     expect(state.deletes).toEqual([]);
   });

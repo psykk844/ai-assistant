@@ -25,7 +25,7 @@ describe("background link processing trigger", () => {
     expect(mocks.processLinkBatch).not.toHaveBeenCalled();
     await vi.runOnlyPendingTimersAsync();
 
-    expect(mocks.processLinkBatch).toHaveBeenCalledWith({ limit: 1 });
+    expect(mocks.processLinkBatch).toHaveBeenCalledWith({ limit: 100 });
   });
 
   it("does not schedule processing for text items with embedded links", async () => {
@@ -39,7 +39,7 @@ describe("background link processing trigger", () => {
     expect(mocks.processLinkBatch).not.toHaveBeenCalled();
   });
 
-  it("coalesces multiple standalone URLs into one bounded batch", async () => {
+  it("coalesces multiple standalone URLs into one full background batch", async () => {
     const { scheduleLinkProcessingForInsertedItems } = await import("../lib/link-processing/background");
 
     scheduleLinkProcessingForInsertedItems([
@@ -50,6 +50,6 @@ describe("background link processing trigger", () => {
     await vi.runOnlyPendingTimersAsync();
 
     expect(mocks.processLinkBatch).toHaveBeenCalledTimes(1);
-    expect(mocks.processLinkBatch).toHaveBeenCalledWith({ limit: 2 });
+    expect(mocks.processLinkBatch).toHaveBeenCalledWith({ limit: 100 });
   });
 });

@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { actorNameForPlatform, extractSocialLinkWithApify, isRetryableExtractionError } from "./apify";
 import { removeWrittenLinkNote, writeFailureLinkNote, writeSuccessLinkNote } from "./obsidian";
-import { summarizeExtractedLink } from "./summarize";
+import { isRetryableSummaryError, summarizeExtractedLink } from "./summarize";
 import type { LinkItem, LinkSource, ProcessLinksSummary, SocialPlatform, WrittenLinkNote } from "./types";
 import { detectSupportedPlatform, extractStandaloneUrl, isSocialUrl, normalizeGenericUrl, normalizeSocialUrl } from "./url";
 import { extractGenericWebLink } from "./web";
@@ -103,6 +103,11 @@ async function extractAndSummarize(
     return { extracted, brief, apifyActor: link.platform === "web" ? "generic-web-fetch" : actorNameForPlatform(link.platform) };
   } catch (error) {
     if (isRetryableExtractionError(error)) {
+      addError(summary, item.id, errorReason(error));
+      return null;
+    }
+
+    if (isRetryableSummaryError(error)) {
       addError(summary, item.id, errorReason(error));
       return null;
     }

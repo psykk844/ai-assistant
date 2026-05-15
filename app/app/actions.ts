@@ -11,6 +11,7 @@ import { isValidLane, laneToPriority, type LaneKey } from "@/lib/items/lane";
 import { planMyDayReorder } from "@/lib/items/my-day-plan";
 import { indexItemsInVectorStore } from "@/lib/items/embeddings";
 import { extractUrl, fetchLinkSummary } from "@/lib/items/link-summary";
+import { scheduleLinkProcessingForInsertedItems } from "@/lib/link-processing/background";
 import { splitInboxChunks } from "@/lib/items/split-chunks";
 import { mirrorItemToObsidian, removeMirroredFileFromMetadata } from "@/lib/obsidian/mirror";
 import { readItemTags, withStoredTags } from "./item-tags";
@@ -191,6 +192,8 @@ export async function captureInboxItem(formData: FormData) {
       status: row.status,
     })),
   );
+
+  scheduleLinkProcessingForInsertedItems(inserted);
 
   // Fire-and-forget: fetch link summaries for any link items
   for (const row of inserted) {

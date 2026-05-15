@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 let selectedColumns = "";
 let insertedPayload: Record<string, unknown> | null = null;
 let updatedPayload: Record<string, unknown> | null = null;
+const backgroundMocks = vi.hoisted(() => ({
+  scheduleLinkProcessingForInsertedItems: vi.fn(),
+}));
 
 const mockItem = {
   id: "item-1",
@@ -64,11 +67,16 @@ vi.mock("@/lib/supabase/admin", () => ({
   },
 }));
 
+vi.mock("../lib/link-processing/background", () => ({
+  scheduleLinkProcessingForInsertedItems: backgroundMocks.scheduleLinkProcessingForInsertedItems,
+}));
+
 describe("mobile item detail route", () => {
   beforeEach(() => {
     selectedColumns = "";
     insertedPayload = null;
     updatedPayload = null;
+    backgroundMocks.scheduleLinkProcessingForInsertedItems.mockReset();
     process.env.MOBILE_DEV_API_KEY = "test-mobile-key";
     process.env.MOBILE_DEV_USER_ID = "user-1";
   });
@@ -113,6 +121,7 @@ describe("mobile item detail route", () => {
       title: "Open detail task",
       tags: ["mobile"],
     });
+    expect(backgroundMocks.scheduleLinkProcessingForInsertedItems).toHaveBeenCalledWith([mockItem]);
   });
 
   it("updates mobile-editable fields without writing or selecting the missing tags column", async () => {

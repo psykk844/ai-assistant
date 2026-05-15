@@ -4,6 +4,7 @@ import { laneToPriority, type LaneKey, isValidLane } from "@/lib/items/lane";
 import { laneFromItem } from "@/lib/items/lane";
 import { mobileCorsPreflightResponse, normalizeItemTags, requireMobileApiUser, unauthorizedResponse, withMobileCors } from "../_shared";
 import type { InboxItem } from "@/lib/items/types";
+import { scheduleLinkProcessingForInsertedItems } from "@/lib/link-processing/background";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,7 @@ export async function POST(request: Request) {
   }
 
   const item = normalizeItemTags(data as Omit<InboxItem, "tags"> & { tags?: string[] | null });
+  scheduleLinkProcessingForInsertedItems([data]);
   return withMobileCors(
     NextResponse.json({
       id: item.id,

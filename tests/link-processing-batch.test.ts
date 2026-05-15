@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   extractGenericWebLink: vi.fn(),
   actorNameForPlatform: vi.fn(),
   summarizeExtractedLink: vi.fn(),
+  isRetryableSummaryError: vi.fn(),
   writeSuccessLinkNote: vi.fn(),
   writeFailureLinkNote: vi.fn(),
   removeWrittenLinkNote: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock("../lib/link-processing/apify", () => ({
 }));
 
 vi.mock("../lib/link-processing/summarize", () => ({
+  isRetryableSummaryError: mocks.isRetryableSummaryError,
   summarizeExtractedLink: mocks.summarizeExtractedLink,
 }));
 
@@ -69,6 +71,7 @@ describe("processLinkBatch", () => {
     state.calls = [];
     vi.clearAllMocks();
     mocks.actorNameForPlatform.mockReturnValue("apify/reddit-scraper");
+    mocks.isRetryableSummaryError.mockReturnValue(false);
     mocks.removeWrittenLinkNote.mockImplementation(async (obsidianPath: string) => {
       state.calls.push(`cleanup:${obsidianPath}`);
     });
@@ -323,6 +326,35 @@ describe("processLinkBatch", () => {
       duplicates: 0,
       skipped: 0,
       errors: [{ itemId: "item-1", reason: "Apify actor did not finish successfully: RUNNING" }],
+    });
+    expect(mocks.writeFailureLinkNote).not.toHaveBeenCalled();
+    expect(state.inserts).toEqual([]);
+    expect(state.deletes).toEqual([]);
+  });
+
+  it("keeps the item when OARS summarization is temporarily unavailable", async () => {
+    state.items = [linkItem({ content: "https://facebook.com/share/p/temporary" })];
+    const retryable = Object.assign(new Error("OARS summary failed with HTTP 524"), { retryable: true });
+    mocks.extractSocialLinkWithApify.mockResolvedValue({
+      ...extractedLink(),
+      platform: "facebook",
+      originalUrl: "https://facebook.com/share/p/temporary",
+      normalizedUrl: "https://facebook.com/share/p/temporary",
+    });
+    mocks.summarizeExtractedLink.mockRejectedValue(retryable);
+    mocks.isRetryableSummaryError.mockReturnValue(true);
+
+    const { processLinkBatch } = await import("../lib/link-processing/process-batch");
+    const summary = await processLinkBatch({ now: new Date("2026-05-14T12:00:00.000Z") });
+
+    expect(summary).toEqual({
+      scanned: 1,
+      processed: 0,
+      summarized: 0,
+      failed: 0,
+      duplicates: 0,
+      skipped: 0,
+      errors: [{ itemId: "item-1", reason: "OARS summary failed with HTTP 524" }],
     });
     expect(mocks.writeFailureLinkNote).not.toHaveBeenCalled();
     expect(state.inserts).toEqual([]);

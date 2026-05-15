@@ -6,10 +6,20 @@ const TEXT_LIMIT = 8000;
 const COMMENT_LIMIT = 50;
 const COMMENT_TEXT_LIMIT = 8000;
 const MAX_TOKENS = 1400;
+const DEFAULT_SUMMARY_TIMEOUT_MS = 45_000;
+const RETRYABLE_HTTP_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504, 524]);
 
 type ChatCompletionResponse = {
   choices?: Array<{ message?: { content?: string | null } }>;
 };
+
+export class RetryableSummaryError extends Error {
+  readonly retryable = true;
+}
+
+export function isRetryableSummaryError(error: unknown): error is RetryableSummaryError {
+  return error instanceof Error && (error as { retryable?: unknown }).retryable === true;
+}
 
 export async function summarizeExtractedLink(extracted: ExtractedSocialLink): Promise<LinkBrief> {
   const apiKey = process.env.OARS_API_KEY?.trim();
@@ -18,25 +28,44 @@ export async function summarizeExtractedLink(extracted: ExtractedSocialLink): Pr
     throw new Error("Missing OARS_API_KEY");
   }
 
-  const response = await fetch(`${oarsBaseUrl()}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: summaryModel(),
-      temperature: 0.1,
-      max_tokens: MAX_TOKENS,
-      messages: [
-        { role: "system", content: systemPrompt() },
-        { role: "user", content: userPrompt(extracted) },
-      ],
-    }),
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), summaryTimeoutMs());
+  let response: Response;
+
+  try {
+    response = await fetch(`${oarsBaseUrl()}/chat/completions`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: summaryModel(),
+        temperature: 0.1,
+        max_tokens: MAX_TOKENS,
+        messages: [
+          { role: "system", content: systemPrompt() },
+          { role: "user", content: userPrompt(extracted) },
+        ],
+      }),
+      cache: "no-store",
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new RetryableSummaryError("OARS summary request timed out");
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
+    if (RETRYABLE_HTTP_STATUSES.has(response.status)) {
+      throw new RetryableSummaryError(`OARS summary failed with HTTP ${response.status}`);
+    }
+
     throw new Error(`OARS summary failed with HTTP ${response.status}`);
   }
 
@@ -56,6 +85,15 @@ function oarsBaseUrl() {
 
 function summaryModel() {
   return process.env.OARS_LINK_SUMMARY_MODEL?.trim() || process.env.OARS_MODEL?.trim() || DEFAULT_SUMMARY_MODEL;
+}
+
+function summaryTimeoutMs() {
+  const configured = Number(process.env.OARS_LINK_SUMMARY_TIMEOUT_MS ?? DEFAULT_SUMMARY_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_SUMMARY_TIMEOUT_MS;
+}
+
+function isAbortError(error: unknown) {
+  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
 }
 
 function systemPrompt() {

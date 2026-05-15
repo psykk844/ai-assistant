@@ -1,17 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { summarizeExtractedLink } from "../lib/link-processing/summarize";
+import { isRetryableSummaryError, summarizeExtractedLink } from "../lib/link-processing/summarize";
 import type { ExtractedSocialLink } from "../lib/link-processing/types";
 
 const priorApiKey = process.env.OARS_API_KEY;
 const priorBaseUrl = process.env.OARS_BASE_URL;
 const priorSummaryModel = process.env.OARS_LINK_SUMMARY_MODEL;
 const priorModel = process.env.OARS_MODEL;
+const priorTimeout = process.env.OARS_LINK_SUMMARY_TIMEOUT_MS;
 
 afterEach(() => {
   restoreEnv("OARS_API_KEY", priorApiKey);
   restoreEnv("OARS_BASE_URL", priorBaseUrl);
   restoreEnv("OARS_LINK_SUMMARY_MODEL", priorSummaryModel);
   restoreEnv("OARS_MODEL", priorModel);
+  restoreEnv("OARS_LINK_SUMMARY_TIMEOUT_MS", priorTimeout);
   vi.unstubAllGlobals();
 });
 
@@ -122,6 +124,32 @@ describe("social link summarization", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(summarizeExtractedLink(fixtureExtractedLink())).rejects.toThrow("OARS summary failed with HTTP 429");
+  });
+
+  it.each([429, 500, 502, 503, 504, 524])("marks transient OARS HTTP %s failures as retryable", async (status) => {
+    process.env.OARS_API_KEY = "test-oars-key";
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ error: "temporary outage" }, { ok: false, status })));
+
+    await expect(summarizeExtractedLink(fixtureExtractedLink())).rejects.toMatchObject({ retryable: true });
+
+    try {
+      await summarizeExtractedLink(fixtureExtractedLink());
+    } catch (error) {
+      expect(isRetryableSummaryError(error)).toBe(true);
+    }
+  });
+
+  it("aborts stalled OARS summary requests as retryable", async () => {
+    process.env.OARS_API_KEY = "test-oars-key";
+    process.env.OARS_LINK_SUMMARY_TIMEOUT_MS = "25";
+    vi.stubGlobal("fetch", vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      await new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+      });
+      throw new Error("unreachable");
+    }));
+
+    await expect(summarizeExtractedLink(fixtureExtractedLink())).rejects.toMatchObject({ retryable: true });
   });
 
   it("marks extracted post text and comments as untrusted source data", async () => {

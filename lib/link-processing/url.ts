@@ -1,4 +1,4 @@
-import type { SupportedPlatform } from "./types";
+import type { SocialPlatform } from "./types";
 
 const TRAILING_PUNCTUATION = /[),.;]+$/;
 const TRACKING_PARAMS = new Set(["fbclid", "gclid", "igshid", "mc_cid", "mc_eid", "s"]);
@@ -8,7 +8,12 @@ export function extractFirstUrl(content: string): string | null {
   return match ? match[0].replace(TRAILING_PUNCTUATION, "") : null;
 }
 
-export function detectSupportedPlatform(url: string): SupportedPlatform | null {
+export function extractStandaloneUrl(content: string): string | null {
+  const trimmed = content.trim();
+  return /^https?:\/\/[^\s<>"]+$/i.test(trimmed) ? trimmed.replace(TRAILING_PUNCTUATION, "") : null;
+}
+
+export function detectSupportedPlatform(url: string): SocialPlatform | null {
   const parsed = parseUrl(url);
 
   if (!parsed) {
@@ -32,7 +37,7 @@ export function detectSupportedPlatform(url: string): SupportedPlatform | null {
   return null;
 }
 
-export function isSupportedPublicSocialUrl(url: string, platform: SupportedPlatform): boolean {
+export function isSupportedPublicSocialUrl(url: string, platform: SocialPlatform): boolean {
   const parsed = parseUrl(url);
 
   if (!parsed) {
@@ -43,7 +48,7 @@ export function isSupportedPublicSocialUrl(url: string, platform: SupportedPlatf
   const segments = pathSegments(path);
 
   if (platform === "reddit") {
-    return segments[0] === "comments" || (segments[0] === "r" && Boolean(segments[1]) && segments[2] === "comments");
+    return segments[0] === "comments" || (segments[0] === "r" && Boolean(segments[1]) && (segments[2] === "comments" || segments[2] === "s"));
   }
 
   if (platform === "x") {
@@ -71,6 +76,17 @@ export function normalizeSocialUrl(input: string): string | null {
   const query = buildQuery(parsed.searchParams);
 
   return `https://${host}${path}${query}`;
+}
+
+export function normalizeGenericUrl(input: string): string | null {
+  const parsed = parseUrl(input);
+
+  if (!parsed) {
+    return null;
+  }
+
+  parsed.hash = "";
+  return parsed.toString().replace(/\/$/, "");
 }
 
 export function slugifyForFilename(title: string, id: string): string {
@@ -101,7 +117,7 @@ function isHostOrSubdomain(host: string, domain: string): boolean {
   return host === domain || host.endsWith(`.${domain}`);
 }
 
-function normalizeHost(hostname: string, platform: SupportedPlatform): string {
+function normalizeHost(hostname: string, platform: SocialPlatform): string {
   const host = removeWww(hostname.toLowerCase());
 
   if (platform === "reddit") {
@@ -142,6 +158,7 @@ function isSupportedFacebookPath(segments: string[]) {
 
   return (
     segments.includes("posts") ||
+    (first === "groups" && segments.includes("permalink")) ||
     first === "story.php" ||
     first === "permalink.php" ||
     first === "reel" ||

@@ -2,8 +2,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { actorNameForPlatform, extractSocialLinkWithApify, isRetryableExtractionError } from "./apify";
 import { removeWrittenLinkNote, writeFailureLinkNote, writeSuccessLinkNote } from "./obsidian";
 import { summarizeExtractedLink } from "./summarize";
-import type { LinkItem, ProcessLinksSummary, SupportedPlatform, WrittenLinkNote } from "./types";
-import { detectSupportedPlatform, extractFirstUrl, normalizeSocialUrl } from "./url";
+import type { LinkItem, LinkSource, ProcessLinksSummary, SocialPlatform, WrittenLinkNote } from "./types";
+import { detectSupportedPlatform, extractStandaloneUrl, normalizeGenericUrl, normalizeSocialUrl } from "./url";
+import { extractGenericWebLink } from "./web";
 
 type BatchOptions = { limit?: number; now?: Date };
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -26,7 +27,7 @@ export async function processLinkBatch(options: BatchOptions = {}): Promise<Proc
     .from("items")
     .select(ITEM_COLUMNS)
     .eq("status", "active")
-    .or("type.eq.link,metadata->>contentType.eq.social_media_post")
+    .or("type.eq.link,metadata->>contentType.eq.social_media_post,content.ilike.http%")
     .order("created_at", { ascending: true })
     .limit(batchLimit(options.limit));
 
@@ -95,9 +96,11 @@ async function extractAndSummarize(
   summary: ProcessLinksSummary,
 ) {
   try {
-    const extracted = await extractSocialLinkWithApify(link);
+    const extracted = link.platform === "web"
+      ? await extractGenericWebLink({ originalUrl: link.originalUrl, normalizedUrl: link.normalizedUrl })
+      : await extractSocialLinkWithApify(socialLink(link));
     const brief = await summarizeExtractedLink(extracted);
-    return { extracted, brief, apifyActor: actorNameForPlatform(link.platform) };
+    return { extracted, brief, apifyActor: link.platform === "web" ? "generic-web-fetch" : actorNameForPlatform(link.platform) };
   } catch (error) {
     if (isRetryableExtractionError(error)) {
       addError(summary, item.id, errorReason(error));
@@ -212,12 +215,25 @@ async function deleteItem(supabase: AdminClient, itemId: string, summary: Proces
 }
 
 function itemLink(item: LinkItem): ValidLink | null {
-  const originalUrl = extractFirstUrl(item.content);
+  const originalUrl = extractStandaloneUrl(item.content);
   if (!originalUrl) return null;
 
   const platform = detectSupportedPlatform(originalUrl);
-  const normalizedUrl = normalizeSocialUrl(originalUrl);
-  return platform && normalizedUrl ? { platform, originalUrl, normalizedUrl } : null;
+  if (platform) {
+    const normalizedUrl = normalizeSocialUrl(originalUrl);
+    return normalizedUrl ? { platform, originalUrl, normalizedUrl } : null;
+  }
+
+  const normalizedUrl = normalizeGenericUrl(originalUrl);
+  return normalizedUrl ? { platform: "web", originalUrl, normalizedUrl } : null;
+}
+
+function socialLink(link: ValidLink): { platform: SocialPlatform; originalUrl: string; normalizedUrl: string } {
+  if (link.platform === "web") {
+    throw new Error("Generic web links do not use Apify actors");
+  }
+
+  return { platform: link.platform, originalUrl: link.originalUrl, normalizedUrl: link.normalizedUrl };
 }
 
 function handleDbResult(error: DbError, itemId: string, summary: ProcessLinksSummary) {
@@ -249,4 +265,4 @@ function errorReason(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-type ValidLink = { platform: SupportedPlatform; originalUrl: string; normalizedUrl: string };
+type ValidLink = { platform: LinkSource; originalUrl: string; normalizedUrl: string };

@@ -1,4 +1,5 @@
-export type SupportedPlatform = "reddit" | "x" | "facebook";
+export type SocialPlatform = "reddit" | "x" | "facebook";
+export type LinkSource = SocialPlatform | "web";
 
 export type LinkItem = {
   id: string;
@@ -13,7 +14,7 @@ export type LinkItem = {
 };
 
 export type ExtractedSocialLink = {
-  platform: SupportedPlatform;
+  platform: LinkSource;
   originalUrl: string;
   normalizedUrl: string;
   title: string;

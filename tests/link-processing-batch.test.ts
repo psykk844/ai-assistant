@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
 
 const mocks = vi.hoisted(() => ({
   extractSocialLinkWithApify: vi.fn(),
+  extractGenericWebLink: vi.fn(),
   actorNameForPlatform: vi.fn(),
   summarizeExtractedLink: vi.fn(),
   writeSuccessLinkNote: vi.fn(),
@@ -45,6 +46,10 @@ vi.mock("../lib/link-processing/obsidian", () => ({
   writeSuccessLinkNote: mocks.writeSuccessLinkNote,
 }));
 
+vi.mock("../lib/link-processing/web", () => ({
+  extractGenericWebLink: mocks.extractGenericWebLink,
+}));
+
 describe("processLinkBatch", () => {
   beforeEach(() => {
     process.env.APIFY_TOKEN = "test-token";
@@ -70,7 +75,7 @@ describe("processLinkBatch", () => {
   });
 
   it("writes, records, and deletes a newly summarized link in safe order", async () => {
-    state.items = [linkItem({ content: "Read https://www.reddit.com/r/AI/comments/abc123/thread/?utm_source=share" })];
+    state.items = [linkItem({ content: "https://www.reddit.com/r/AI/comments/abc123/thread/?utm_source=share" })];
     mocks.extractSocialLinkWithApify.mockImplementation(async () => {
       state.calls.push("extract");
       return extractedLink();
@@ -115,7 +120,7 @@ describe("processLinkBatch", () => {
   });
 
   it("deletes duplicate todo items without creating a new note or registry row", async () => {
-    state.items = [linkItem({ content: "Saved before https://twitter.com/example/status/123?utm_source=feed" })];
+    state.items = [linkItem({ content: "https://twitter.com/example/status/123?utm_source=feed" })];
     state.processed.set("user-1|https://x.com/example/status/123", { id: "processed-1", status: "summarized" });
 
     const { processLinkBatch } = await import("../lib/link-processing/process-batch");
@@ -155,7 +160,7 @@ describe("processLinkBatch", () => {
     const summary = await processLinkBatch({ now: new Date("2026-05-14T12:00:00.000Z") });
 
     expect(summary).toEqual({ scanned: 1, processed: 1, summarized: 1, failed: 0, duplicates: 0, skipped: 0, errors: [] });
-    expect(state.orFilter).toBe("type.eq.link,metadata->>contentType.eq.social_media_post");
+    expect(state.orFilter).toBe("type.eq.link,metadata->>contentType.eq.social_media_post,content.ilike.http%");
     expect(mocks.extractSocialLinkWithApify).toHaveBeenCalledWith({
       platform: "facebook",
       originalUrl: "https://www.facebook.com/share/p/1CgcKHNWeD/",
@@ -164,8 +169,49 @@ describe("processLinkBatch", () => {
     expect(state.deletes).toEqual(["item-1"]);
   });
 
+  it("leaves text items with embedded links in the app", async () => {
+    state.items = [linkItem({ content: "Read this later https://github.com/Shubhamsaboo/awesome-llm-apps", type: "todo" })];
+
+    const { processLinkBatch } = await import("../lib/link-processing/process-batch");
+    const summary = await processLinkBatch({ now: new Date("2026-05-14T12:00:00.000Z") });
+
+    expect(summary).toEqual({ scanned: 1, processed: 0, summarized: 0, failed: 0, duplicates: 0, skipped: 1, errors: [] });
+    expect(mocks.extractSocialLinkWithApify).not.toHaveBeenCalled();
+    expect(mocks.extractGenericWebLink).not.toHaveBeenCalled();
+    expect(state.deletes).toEqual([]);
+  });
+
+  it("archives standalone generic web links", async () => {
+    state.items = [linkItem({ content: "https://github.com/Shubhamsaboo/awesome-llm-apps", title: "Awesome LLM Apps" })];
+    mocks.extractGenericWebLink.mockResolvedValue({
+      platform: "web",
+      originalUrl: "https://github.com/Shubhamsaboo/awesome-llm-apps",
+      normalizedUrl: "https://github.com/Shubhamsaboo/awesome-llm-apps",
+      title: "Awesome LLM Apps",
+      author: null,
+      publishedAt: null,
+      text: "A curated list of LLM apps.",
+      comments: [],
+      metrics: {},
+      raw: { source: "web" },
+    });
+    mocks.summarizeExtractedLink.mockResolvedValue(brief());
+    mocks.writeSuccessLinkNote.mockResolvedValue({ obsidianPath: "Links/2026-05/awesome-llm-apps.md", status: "summarized" });
+
+    const { processLinkBatch } = await import("../lib/link-processing/process-batch");
+    const summary = await processLinkBatch({ now: new Date("2026-05-14T12:00:00.000Z") });
+
+    expect(summary).toEqual({ scanned: 1, processed: 1, summarized: 1, failed: 0, duplicates: 0, skipped: 0, errors: [] });
+    expect(mocks.extractGenericWebLink).toHaveBeenCalledWith({
+      originalUrl: "https://github.com/Shubhamsaboo/awesome-llm-apps",
+      normalizedUrl: "https://github.com/Shubhamsaboo/awesome-llm-apps",
+    });
+    expect(state.inserts).toEqual([expect.objectContaining({ platform: "web", original_item_id: "item-1" })]);
+    expect(state.deletes).toEqual(["item-1"]);
+  });
+
   it("keeps the todo item when the success Obsidian write fails", async () => {
-    state.items = [linkItem({ content: "Read https://reddit.com/r/AI/comments/abc123/thread" })];
+    state.items = [linkItem({ content: "https://reddit.com/r/AI/comments/abc123/thread" })];
     mocks.extractSocialLinkWithApify.mockResolvedValue(extractedLink());
     mocks.summarizeExtractedLink.mockResolvedValue(brief());
     mocks.writeSuccessLinkNote.mockRejectedValue(new Error("disk full"));
@@ -187,7 +233,7 @@ describe("processLinkBatch", () => {
   });
 
   it("removes the just-written success note and keeps the todo item when registry insert fails", async () => {
-    state.items = [linkItem({ content: "Read https://reddit.com/r/AI/comments/abc123/thread" })];
+    state.items = [linkItem({ content: "https://reddit.com/r/AI/comments/abc123/thread" })];
     state.insertError = { message: "duplicate key value violates unique constraint" };
     mocks.extractSocialLinkWithApify.mockImplementation(async () => {
       state.calls.push("extract");
@@ -226,7 +272,7 @@ describe("processLinkBatch", () => {
   });
 
   it("writes a failure note, records failed status, and deletes after Apify failure", async () => {
-    state.items = [linkItem({ content: "Read https://facebook.com/story.php?id=42" })];
+    state.items = [linkItem({ content: "https://facebook.com/story.php?id=42" })];
     mocks.extractSocialLinkWithApify.mockRejectedValue(new Error("Apify actor returned no dataset items"));
     mocks.writeFailureLinkNote.mockResolvedValue({ obsidianPath: "Links/2026-05/failed.md", status: "failed" });
 
@@ -250,7 +296,7 @@ describe("processLinkBatch", () => {
   });
 
   it("keeps the todo item when Apify returns a retryable non-terminal run status", async () => {
-    state.items = [linkItem({ content: "Read https://reddit.com/r/AI/comments/abc123/thread" })];
+    state.items = [linkItem({ content: "https://reddit.com/r/AI/comments/abc123/thread" })];
     mocks.extractSocialLinkWithApify.mockRejectedValue(
       Object.assign(new Error("Apify actor did not finish successfully: RUNNING"), { retryable: true }),
     );
@@ -273,7 +319,7 @@ describe("processLinkBatch", () => {
   });
 
   it("keeps the todo item when Apify returns a retryable transitional run status", async () => {
-    state.items = [linkItem({ content: "Read https://reddit.com/r/AI/comments/abc123/thread" })];
+    state.items = [linkItem({ content: "https://reddit.com/r/AI/comments/abc123/thread" })];
     mocks.extractSocialLinkWithApify.mockRejectedValue(
       Object.assign(new Error("Apify actor did not finish successfully: ABORTING"), { retryable: true }),
     );
@@ -297,7 +343,7 @@ describe("processLinkBatch", () => {
 
   it("preflights required config before loading items and leaves active links untouched", async () => {
     delete process.env.APIFY_X_ACTOR;
-    state.items = [linkItem({ content: "Read https://twitter.com/example/status/123" })];
+    state.items = [linkItem({ content: "https://twitter.com/example/status/123" })];
 
     const { processLinkBatch } = await import("../lib/link-processing/process-batch");
     const summary = await processLinkBatch({ now: new Date("2026-05-14T12:00:00.000Z") });

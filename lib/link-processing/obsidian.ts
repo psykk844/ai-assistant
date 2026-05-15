@@ -1,6 +1,6 @@
 import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
-import type { ExtractedSocialLink, LinkBrief, SupportedPlatform, WrittenLinkNote } from "./types";
+import type { ExtractedSocialLink, LinkBrief, LinkSource, WrittenLinkNote } from "./types";
 import { slugifyForFilename } from "./url";
 
 const DEFAULT_VAULT_ROOT = "/shared/obsidian_live_vault";
@@ -15,7 +15,7 @@ export type WriteSuccessLinkNoteInput = {
 
 export type WriteFailureLinkNoteInput = {
   itemId: string;
-  platform: SupportedPlatform;
+  platform: LinkSource;
   originalUrl: string;
   normalizedUrl: string;
   title: string;
@@ -203,7 +203,7 @@ function isFileExistsError(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
 }
 
-function successTags(platform: SupportedPlatform, briefTags: string[]) {
+function successTags(platform: LinkSource, briefTags: string[]) {
   return ["links", `platform/${platform}`, ...briefTags.map((tag) => `brief/${tag}`)];
 }
 

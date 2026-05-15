@@ -1,13 +1,13 @@
-import type { ExtractedSocialLink, SupportedPlatform } from "./types";
+import type { ExtractedSocialLink, SocialPlatform } from "./types";
 
 export type ExtractSocialLinkWithApifyInput = {
-  platform: SupportedPlatform;
+  platform: SocialPlatform;
   originalUrl: string;
   normalizedUrl: string;
 };
 
 const APIFY_API_BASE = "https://api.apify.com/v2";
-const ACTOR_ENV_KEYS: Record<SupportedPlatform, string> = {
+const ACTOR_ENV_KEYS: Record<SocialPlatform, string> = {
   reddit: "APIFY_REDDIT_ACTOR",
   x: "APIFY_X_ACTOR",
   facebook: "APIFY_FACEBOOK_ACTOR",
@@ -23,7 +23,7 @@ export function isRetryableExtractionError(error: unknown): error is RetryableEx
   return error instanceof Error && (error as { retryable?: unknown }).retryable === true;
 }
 
-export function actorNameForPlatform(platform: SupportedPlatform): string {
+export function actorNameForPlatform(platform: SocialPlatform): string {
   const envKey = ACTOR_ENV_KEYS[platform];
   const actorName = process.env[envKey];
 

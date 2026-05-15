@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   detectSupportedPlatform,
   extractFirstUrl,
+  extractStandaloneUrl,
   isSupportedPublicSocialUrl,
   normalizeSocialUrl,
   slugifyForFilename,
@@ -12,6 +13,14 @@ describe("link processing URL utilities", () => {
     const content = "Read this first: https://reddit.com/r/ai/comments/abc123/thread), then https://x.com/user/status/1";
 
     expect(extractFirstUrl(content)).toBe("https://reddit.com/r/ai/comments/abc123/thread");
+  });
+
+  it("extracts only standalone URL content for automatic archiving", () => {
+    expect(extractStandaloneUrl(" https://github.com/Shubhamsaboo/awesome-llm-apps \n")).toBe(
+      "https://github.com/Shubhamsaboo/awesome-llm-apps",
+    );
+    expect(extractStandaloneUrl("Read this https://github.com/Shubhamsaboo/awesome-llm-apps later")).toBeNull();
+    expect(extractStandaloneUrl("https://github.com/one https://github.com/two")).toBeNull();
   });
 
   it("detects supported platforms and rejects unsupported hosts", () => {
@@ -36,6 +45,8 @@ describe("link processing URL utilities", () => {
     expect(isSupportedPublicSocialUrl("https://facebook.com/watch/?v=123", "facebook")).toBe(true);
     expect(isSupportedPublicSocialUrl("https://facebook.com/photo.php?fbid=123", "facebook")).toBe(true);
     expect(isSupportedPublicSocialUrl("https://facebook.com/share/p/abc", "facebook")).toBe(true);
+    expect(isSupportedPublicSocialUrl("https://facebook.com/groups/nothingheldback/permalink/2086731376060543/", "facebook")).toBe(true);
+    expect(isSupportedPublicSocialUrl("https://www.reddit.com/r/vibecoding/s/gwGd3Z8OOy", "reddit")).toBe(true);
 
     expect(isSupportedPublicSocialUrl("https://reddit.com/r/ai", "reddit")).toBe(false);
     expect(isSupportedPublicSocialUrl("https://reddit.com/user/me/comments/abc123", "reddit")).toBe(false);

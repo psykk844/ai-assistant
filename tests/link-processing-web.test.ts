@@ -50,6 +50,23 @@ describe("generic web link extraction", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("blocks redirects to private network targets", async () => {
+    dnsMocks.lookup
+      .mockResolvedValueOnce({ address: "93.184.216.34", family: 4 })
+      .mockResolvedValueOnce({ address: "127.0.0.1", family: 4 });
+    const fetchMock = vi.fn(async () => new Response(null, {
+      status: 302,
+      headers: { location: "http://internal.example.test/admin" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(extractGenericWebLink({
+      originalUrl: "https://example.com/redirect",
+      normalizedUrl: "https://example.com/redirect",
+    })).rejects.toThrow("private or local network");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects non-text responses", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("binary", { status: 200, headers: { "content-type": "application/octet-stream" } })));
 

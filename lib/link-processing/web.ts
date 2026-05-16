@@ -10,15 +10,10 @@ export type ExtractGenericWebLinkInput = {
 const TEXT_LIMIT = 12000;
 const BODY_LIMIT_BYTES = 1_000_000;
 const FETCH_TIMEOUT_MS = 15_000;
+const MAX_REDIRECTS = 5;
 
 export async function extractGenericWebLink(input: ExtractGenericWebLinkInput): Promise<ExtractedSocialLink> {
-  await assertPublicTarget(input.normalizedUrl);
-
-  const response = await fetch(input.normalizedUrl, {
-    headers: { "User-Agent": "todo-link-archiver/1.0" },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    cache: "no-store",
-  });
+  const response = await fetchPublicWebResponse(input.normalizedUrl);
 
   if (!response.ok) {
     throw new Error(`Generic web fetch failed with HTTP ${response.status}`);
@@ -46,6 +41,38 @@ export async function extractGenericWebLink(input: ExtractGenericWebLinkInput): 
     metrics: {},
     raw: { contentType: contentType || null },
   };
+}
+
+async function fetchPublicWebResponse(url: string) {
+  let currentUrl = url;
+
+  for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
+    await assertPublicTarget(currentUrl);
+
+    const response = await fetch(currentUrl, {
+      headers: { "User-Agent": "todo-link-archiver/1.0" },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      cache: "no-store",
+      redirect: "manual",
+    });
+
+    if (!isRedirectStatus(response.status)) {
+      return response;
+    }
+
+    const location = response.headers.get("location");
+    if (!location) {
+      throw new Error(`Generic web fetch failed with HTTP ${response.status}`);
+    }
+
+    currentUrl = new URL(location, currentUrl).toString();
+  }
+
+  throw new Error("Generic web fetch exceeded redirect limit");
+}
+
+function isRedirectStatus(status: number) {
+  return status >= 300 && status < 400;
 }
 
 async function assertPublicTarget(url: string) {

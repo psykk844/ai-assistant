@@ -139,6 +139,39 @@ describe("social link summarization", () => {
     }
   });
 
+  it("retries once when OARS returns a transient failure before falling back", async () => {
+    process.env.OARS_API_KEY = "test-oars-key";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "temporary outage" }, { ok: false, status: 524 }))
+      .mockResolvedValueOnce(jsonResponse({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: "Recovered Summary",
+                whySaved: "The retry succeeded.",
+                fullContext: "The article was summarized after a transient OARS failure.",
+                keyPoints: ["Retry before fallback"],
+                notableDetails: ["First request returned HTTP 524."],
+                tags: ["retry"],
+              }),
+            },
+          },
+        ],
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(summarizeExtractedLink(fixtureExtractedLink())).resolves.toEqual({
+      title: "Recovered Summary",
+      whySaved: "The retry succeeded.",
+      fullContext: "The article was summarized after a transient OARS failure.",
+      keyPoints: ["Retry before fallback"],
+      notableDetails: ["First request returned HTTP 524."],
+      tags: ["retry"],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("aborts stalled OARS summary requests as retryable", async () => {
     process.env.OARS_API_KEY = "test-oars-key";
     process.env.OARS_LINK_SUMMARY_TIMEOUT_MS = "25";

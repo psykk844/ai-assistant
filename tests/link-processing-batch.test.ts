@@ -224,6 +224,48 @@ describe("processLinkBatch", () => {
     expect(state.deletes).toEqual(["item-1"]);
   });
 
+  it("archives standalone generic web links with a fallback brief when OARS still times out after retries", async () => {
+    state.items = [linkItem({
+      content: "https://nathanburkeconsulting.com/2017/03/05/coaching-girls-it-is-different/",
+      title: "https://nathanburkeconsulting.com/2017/03/05/coaching-girls-it-is-different/",
+      type: "todo",
+    })];
+    const retryable = Object.assign(new Error("OARS summary request timed out"), { retryable: true });
+    mocks.extractGenericWebLink.mockResolvedValue({
+      platform: "web",
+      originalUrl: "https://nathanburkeconsulting.com/2017/03/05/coaching-girls-it-is-different/",
+      normalizedUrl: "https://nathanburkeconsulting.com/2017/03/05/coaching-girls-it-is-different",
+      title: "Coaching girls... it is different!",
+      author: null,
+      publishedAt: null,
+      text: "Coaching girls requires over-communication, fairness, empathy, and a different approach from coaching boys.",
+      comments: [],
+      metrics: {},
+      raw: { source: "web" },
+    });
+    mocks.summarizeExtractedLink.mockRejectedValue(retryable);
+    mocks.isRetryableSummaryError.mockReturnValue(true);
+    mocks.writeSuccessLinkNote.mockResolvedValue({ obsidianPath: "Links/2026-05/coaching-girls-it-is-different.md", status: "summarized" });
+
+    const { processLinkBatch } = await import("../lib/link-processing/process-batch");
+    const summary = await processLinkBatch({ now: new Date("2026-05-14T12:00:00.000Z") });
+
+    expect(summary).toEqual({ scanned: 1, processed: 1, summarized: 1, failed: 0, duplicates: 0, skipped: 0, errors: [] });
+    expect(mocks.extractGenericWebLink).toHaveBeenCalledWith({
+      originalUrl: "https://nathanburkeconsulting.com/2017/03/05/coaching-girls-it-is-different/",
+      normalizedUrl: "https://nathanburkeconsulting.com/2017/03/05/coaching-girls-it-is-different",
+    });
+    expect(mocks.writeSuccessLinkNote).toHaveBeenCalledWith(expect.objectContaining({
+      apifyActor: "generic-web-fetch",
+      brief: expect.objectContaining({
+        title: "Coaching girls... it is different!",
+        tags: ["saved-link", "summary-fallback"],
+      }),
+    }));
+    expect(state.inserts).toEqual([expect.objectContaining({ platform: "web", original_item_id: "item-1" })]);
+    expect(state.deletes).toEqual(["item-1"]);
+  });
+
   it("keeps the todo item when the success Obsidian write fails", async () => {
     state.items = [linkItem({ content: "https://reddit.com/r/AI/comments/abc123/thread" })];
     mocks.extractSocialLinkWithApify.mockResolvedValue(extractedLink());
@@ -332,7 +374,7 @@ describe("processLinkBatch", () => {
     expect(state.deletes).toEqual([]);
   });
 
-  it("keeps the item when OARS summarization is temporarily unavailable", async () => {
+  it("archives the link with a fallback brief when OARS summarization remains unavailable after retries", async () => {
     state.items = [linkItem({ content: "https://facebook.com/share/p/temporary" })];
     const retryable = Object.assign(new Error("OARS summary failed with HTTP 524"), { retryable: true });
     mocks.extractSocialLinkWithApify.mockResolvedValue({
@@ -343,22 +385,26 @@ describe("processLinkBatch", () => {
     });
     mocks.summarizeExtractedLink.mockRejectedValue(retryable);
     mocks.isRetryableSummaryError.mockReturnValue(true);
+    mocks.actorNameForPlatform.mockReturnValue("apify/facebook-scraper");
+    mocks.writeSuccessLinkNote.mockResolvedValue({ obsidianPath: "Links/2026-05/facebook-fallback.md", status: "summarized" });
 
     const { processLinkBatch } = await import("../lib/link-processing/process-batch");
     const summary = await processLinkBatch({ now: new Date("2026-05-14T12:00:00.000Z") });
 
-    expect(summary).toEqual({
-      scanned: 1,
-      processed: 0,
-      summarized: 0,
-      failed: 0,
-      duplicates: 0,
-      skipped: 0,
-      errors: [{ itemId: "item-1", reason: "OARS summary failed with HTTP 524" }],
-    });
+    expect(summary).toEqual({ scanned: 1, processed: 1, summarized: 1, failed: 0, duplicates: 0, skipped: 0, errors: [] });
+    expect(mocks.writeSuccessLinkNote).toHaveBeenCalledWith(expect.objectContaining({
+      brief: {
+        title: "Useful Thread",
+        whySaved: "Saved for later review. AI summarization was unavailable, so this note uses extracted source text.",
+        fullContext: "Thread text",
+        keyPoints: ["Thread text"],
+        notableDetails: ["AI summary fallback: OARS summary failed with HTTP 524"],
+        tags: ["saved-link", "summary-fallback"],
+      },
+    }));
     expect(mocks.writeFailureLinkNote).not.toHaveBeenCalled();
-    expect(state.inserts).toEqual([]);
-    expect(state.deletes).toEqual([]);
+    expect(state.inserts).toEqual([expect.objectContaining({ platform: "facebook", original_item_id: "item-1" })]);
+    expect(state.deletes).toEqual(["item-1"]);
   });
 
   it("keeps the todo item when Apify returns a retryable transitional run status", async () => {

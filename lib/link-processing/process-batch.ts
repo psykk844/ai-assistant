@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { actorNameForPlatform, extractSocialLinkWithApify, isRetryableExtractionError } from "./apify";
 import { removeWrittenLinkNote, writeFailureLinkNote, writeSuccessLinkNote } from "./obsidian";
 import { isRetryableSummaryError, summarizeExtractedLink } from "./summarize";
-import type { LinkItem, LinkSource, ProcessLinksSummary, SocialPlatform, WrittenLinkNote } from "./types";
+import type { ExtractedSocialLink, LinkBrief, LinkItem, LinkSource, ProcessLinksSummary, SocialPlatform, WrittenLinkNote } from "./types";
 import { detectSupportedPlatform, extractStandaloneUrl, isSocialUrl, normalizeGenericUrl, normalizeSocialUrl } from "./url";
 import { extractGenericWebLink } from "./web";
 
@@ -95,19 +95,16 @@ async function extractAndSummarize(
   savedAt: string,
   summary: ProcessLinksSummary,
 ) {
+  let extracted: ExtractedSocialLink;
+  let apifyActor: string;
+
   try {
-    const extracted = link.platform === "web"
+    extracted = link.platform === "web"
       ? await extractGenericWebLink({ originalUrl: link.originalUrl, normalizedUrl: link.normalizedUrl })
       : await extractSocialLinkWithApify(socialLink(link));
-    const brief = await summarizeExtractedLink(extracted);
-    return { extracted, brief, apifyActor: link.platform === "web" ? "generic-web-fetch" : actorNameForPlatform(link.platform) };
+    apifyActor = link.platform === "web" ? "generic-web-fetch" : actorNameForPlatform(link.platform);
   } catch (error) {
     if (isRetryableExtractionError(error)) {
-      addError(summary, item.id, errorReason(error));
-      return null;
-    }
-
-    if (isRetryableSummaryError(error)) {
       addError(summary, item.id, errorReason(error));
       return null;
     }
@@ -115,6 +112,35 @@ async function extractAndSummarize(
     await processFailure(supabase, item, link, savedAt, errorReason(error), summary);
     return null;
   }
+
+  try {
+    const brief = await summarizeExtractedLink(extracted);
+    return { extracted, brief, apifyActor };
+  } catch (error) {
+    if (isRetryableSummaryError(error)) {
+      return { extracted, brief: fallbackBrief(extracted, errorReason(error)), apifyActor };
+    }
+
+    await processFailure(supabase, item, link, savedAt, errorReason(error), summary);
+    return null;
+  }
+}
+
+function fallbackBrief(extracted: ExtractedSocialLink, reason: string): LinkBrief {
+  const sourceText = truncate(extracted.text?.trim() || extracted.title || extracted.normalizedUrl, 1200);
+
+  return {
+    title: extracted.title || extracted.normalizedUrl,
+    whySaved: "Saved for later review. AI summarization was unavailable, so this note uses extracted source text.",
+    fullContext: sourceText,
+    keyPoints: [truncate(sourceText, 300)],
+    notableDetails: [`AI summary fallback: ${reason}`],
+    tags: ["saved-link", "summary-fallback"],
+  };
+}
+
+function truncate(value: string, limit: number) {
+  return value.length > limit ? `${value.slice(0, limit).trimEnd()}...` : value;
 }
 
 async function processFailure(

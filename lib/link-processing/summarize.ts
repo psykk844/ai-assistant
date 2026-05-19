@@ -6,7 +6,8 @@ const TEXT_LIMIT = 8000;
 const COMMENT_LIMIT = 50;
 const COMMENT_TEXT_LIMIT = 8000;
 const MAX_TOKENS = 1400;
-const DEFAULT_SUMMARY_TIMEOUT_MS = 45_000;
+const DEFAULT_SUMMARY_TIMEOUT_MS = 180_000;
+const SUMMARY_ATTEMPTS = 2;
 const RETRYABLE_HTTP_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504, 524]);
 
 type ChatCompletionResponse = {
@@ -28,6 +29,20 @@ export async function summarizeExtractedLink(extracted: ExtractedSocialLink): Pr
     throw new Error("Missing OARS_API_KEY");
   }
 
+  for (let attempt = 1; attempt <= SUMMARY_ATTEMPTS; attempt += 1) {
+    try {
+      return await requestSummary(extracted, apiKey);
+    } catch (error) {
+      if (!isRetryableSummaryError(error) || attempt === SUMMARY_ATTEMPTS) {
+        throw error;
+      }
+    }
+  }
+
+  throw new RetryableSummaryError("OARS summary retry failed");
+}
+
+async function requestSummary(extracted: ExtractedSocialLink, apiKey: string): Promise<LinkBrief> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), summaryTimeoutMs());
   let response: Response;

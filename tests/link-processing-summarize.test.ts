@@ -81,7 +81,7 @@ describe("social link summarization", () => {
 
   it("parses fenced JSON content", async () => {
     process.env.OARS_API_KEY = "test-oars-key";
-    process.env.OARS_MODEL = "fallback-model";
+    process.env.OARS_LINK_SUMMARY_MODEL = "link-summary-model";
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
       jsonResponse({
         choices: [
@@ -113,7 +113,37 @@ describe("social link summarization", () => {
       tags: ["workflow"],
     });
     const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
-    expect(body.model).toBe("fallback-model");
+    expect(body.model).toBe("link-summary-model");
+  });
+
+  it("uses the default link summary model instead of the general OARS model", async () => {
+    process.env.OARS_API_KEY = "test-oars-key";
+    process.env.OARS_MODEL = "slow-general-model";
+    delete process.env.OARS_LINK_SUMMARY_MODEL;
+    const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
+      jsonResponse({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: "Default Model Summary",
+                whySaved: "It should avoid the slow general model.",
+                fullContext: "The dedicated link-summary default is used.",
+                keyPoints: [],
+                notableDetails: [],
+                tags: [],
+              }),
+            },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await summarizeExtractedLink(fixtureExtractedLink());
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
+    expect(body.model).toBe("claude-sonnet-4-6");
   });
 
   it("throws the OARS HTTP status when summarization fails", async () => {

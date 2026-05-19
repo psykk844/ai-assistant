@@ -4,6 +4,7 @@
  */
 
 const URL_REGEX = /(https?:\/\/[^\s<>"']+)/i;
+const DEFAULT_LINK_SUMMARY_MODEL = "claude-sonnet-4-6";
 
 export function extractUrl(content: string): string | null {
   const match = content.match(URL_REGEX);
@@ -80,7 +81,7 @@ export async function fetchLinkSummary(url: string): Promise<{
     // Generate AI summary
     const baseUrl = process.env.OARS_BASE_URL ?? "https://llm.digiwebfr.studio/v1";
     const apiKey = process.env.OARS_API_KEY ?? "";
-    const model = process.env.OARS_MODEL ?? "claude-sonnet-4-6";
+    const model = process.env.OARS_LINK_SUMMARY_MODEL?.trim() || DEFAULT_LINK_SUMMARY_MODEL;
 
     if (apiKey && bodyText.length > 50) {
       const aiRes = await fetch(`${baseUrl}/chat/completions`, {

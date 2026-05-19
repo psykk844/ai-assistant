@@ -99,7 +99,7 @@ function oarsBaseUrl() {
 }
 
 function summaryModel() {
-  return process.env.OARS_LINK_SUMMARY_MODEL?.trim() || process.env.OARS_MODEL?.trim() || DEFAULT_SUMMARY_MODEL;
+  return process.env.OARS_LINK_SUMMARY_MODEL?.trim() || DEFAULT_SUMMARY_MODEL;
 }
 
 function summaryTimeoutMs() {

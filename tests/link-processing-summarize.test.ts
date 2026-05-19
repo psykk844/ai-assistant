@@ -143,7 +143,7 @@ describe("social link summarization", () => {
     await summarizeExtractedLink(fixtureExtractedLink());
 
     const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
-    expect(body.model).toBe("claude-sonnet-4-6");
+    expect(body.model).toBe("gpt-5.5");
   });
 
   it("throws the OARS HTTP status when summarization fails", async () => {

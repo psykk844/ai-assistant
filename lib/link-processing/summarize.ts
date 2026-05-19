@@ -1,7 +1,7 @@
 import type { ExtractedSocialLink, LinkBrief } from "./types";
 
 const DEFAULT_OARS_BASE_URL = "https://llm.digiwebfr.studio/v1";
-const DEFAULT_SUMMARY_MODEL = "claude-sonnet-4-6";
+const DEFAULT_SUMMARY_MODEL = "gpt-5.5";
 const TEXT_LIMIT = 8000;
 const COMMENT_LIMIT = 50;
 const COMMENT_TEXT_LIMIT = 8000;

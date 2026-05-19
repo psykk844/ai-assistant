@@ -4,7 +4,7 @@
  */
 
 const URL_REGEX = /(https?:\/\/[^\s<>"']+)/i;
-const DEFAULT_LINK_SUMMARY_MODEL = "claude-sonnet-4-6";
+const DEFAULT_LINK_SUMMARY_MODEL = "gpt-5.5";
 
 export function extractUrl(content: string): string | null {
   const match = content.match(URL_REGEX);

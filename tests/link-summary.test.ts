@@ -29,7 +29,7 @@ describe("link metadata summary", () => {
 
     expect(result.ai_summary).toBe("Short useful summary.");
     const aiBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
-    expect(aiBody.model).toBe("claude-sonnet-4-6");
+    expect(aiBody.model).toBe("gpt-5.5");
   });
 });
 

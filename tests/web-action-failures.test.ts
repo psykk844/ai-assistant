@@ -9,7 +9,7 @@ describe("web item action failures", () => {
     const end = source.indexOf("export async function moveItemToLane");
     const updateItemStatusSource = source.slice(start, end);
 
-    expect(updateItemStatusSource).toContain("await requireHardcodedSession();\n\n  try {");
+    expect(updateItemStatusSource).toMatch(/await requireHardcodedSession\(\);\s+try \{/);
     expect(updateItemStatusSource).toContain("throw new Error(`Failed to load item for status update:");
     expect(updateItemStatusSource).toContain("throw new Error(`Failed to update item status:");
     expect(updateItemStatusSource).toContain("throw error;");

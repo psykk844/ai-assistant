@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition, useCallback, useMemo } from "react";
+import { useState, useEffect, useTransition, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -23,7 +23,8 @@ import { CSS } from "@dnd-kit/utilities";
 import type { InboxItem } from "@/lib/items/types";
 import { buildSubtaskTree, getSubtaskProgress, type TreeNode } from "@/lib/items/subtask-tree";
 import { computeMyDayPlan, MY_DAY_CAP } from "@/lib/items/my-day-plan";
-import { LANE_LABELS, type LaneKey } from "@/lib/items/lane";
+import { LANE_LABELS, laneToPriority, type LaneKey } from "@/lib/items/lane";
+import { mergeInitialItemsWithPendingPatches, type PendingItemPatch } from "../board-logic";
 import { buildFallbackBriefing } from "./briefing";
 import {
   captureInboxItem,
@@ -57,12 +58,38 @@ export function MyDayClient({
   const [quickAddText, setQuickAddText] = useState("");
   const [quickAddLane, setQuickAddLane] = useState<LaneKey>("today");
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const pendingItemPatchesRef = useRef<Record<string, PendingItemPatch>>({});
 
   // Optimistic state: we mirror the server items so DnD feels instant.
   const [items, setItems] = useState(allActiveItems);
   useEffect(() => {
-    setItems(allActiveItems);
+    const merged = mergeInitialItemsWithPendingPatches(allActiveItems, pendingItemPatchesRef.current);
+    pendingItemPatchesRef.current = merged.remainingPatches;
+    setItems(merged.items);
   }, [allActiveItems]);
+
+  const patchItemOptimistically = useCallback((itemId: string, patch: PendingItemPatch) => {
+    pendingItemPatchesRef.current = {
+      ...pendingItemPatchesRef.current,
+      [itemId]: {
+        ...pendingItemPatchesRef.current[itemId],
+        ...patch,
+      },
+    };
+
+    setItems((prev) => prev.map((item) => (item.id === itemId ? { ...item, ...patch } : item)));
+  }, []);
+
+  const clearPendingItemPatch = useCallback((itemId: string) => {
+    const { [itemId]: _removed, ...rest } = pendingItemPatchesRef.current;
+    pendingItemPatchesRef.current = rest;
+  }, []);
+
+  const rollbackItemPatch = useCallback((itemId: string, previousItem: InboxItem | undefined) => {
+    clearPendingItemPatch(itemId);
+    if (!previousItem) return;
+    setItems((prev) => prev.map((item) => (item.id === itemId ? previousItem : item)));
+  }, [clearPendingItemPatch]);
 
   const sensors = useSensors(
     // Desktop: small distance threshold so clicks don't start drags.
@@ -125,15 +152,23 @@ export function MyDayClient({
 
   const handleComplete = useCallback((itemId: string, currentStatus: string) => {
     const nextStatus = currentStatus === "completed" ? "active" : "completed";
-    // Phase 2: avoid optimistic full-list mutation on mobile to reduce render churn.
+    const previousItem = items.find((item) => item.id === itemId);
+    patchItemOptimistically(itemId, { status: nextStatus as InboxItem["status"] });
+
     startTransition(async () => {
       const form = new FormData();
       form.set("itemId", itemId);
       form.set("status", nextStatus);
-      await updateItemStatus(form);
-      router.refresh();
+      try {
+        await updateItemStatus(form);
+        router.refresh();
+      } catch (error) {
+        rollbackItemPatch(itemId, previousItem);
+        console.error("Failed to update item status from My Day", { itemId, nextStatus, error });
+        router.refresh();
+      }
     });
-  }, [router]);
+  }, [items, patchItemOptimistically, rollbackItemPatch, router]);
 
   const handleQuickAdd = useCallback(async () => {
     if (!quickAddText.trim()) return;
@@ -148,11 +183,20 @@ export function MyDayClient({
   }, [quickAddText, quickAddLane, router]);
 
   const handleMoveSuggestion = useCallback((itemId: string) => {
+    const previousItem = items.find((item) => item.id === itemId);
+    patchItemOptimistically(itemId, { status: "active", priority_score: laneToPriority("today") });
+
     startTransition(async () => {
-      await moveItemToLane({ itemId, toLane: "today" });
-      router.refresh();
+      try {
+        await moveItemToLane({ itemId, toLane: "today" });
+        router.refresh();
+      } catch (error) {
+        rollbackItemPatch(itemId, previousItem);
+        console.error("Failed to move item suggestion from My Day", { itemId, error });
+        router.refresh();
+      }
     });
-  }, [router]);
+  }, [items, patchItemOptimistically, rollbackItemPatch, router]);
 
   const toggleExpand = (id: string) => {
     setExpandedItems((prev) => {

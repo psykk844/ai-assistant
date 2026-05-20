@@ -343,4 +343,87 @@ describe("board logic regressions", () => {
       expect(source, `${name} must not set form field "newStatus"`).not.toMatch(/form\.set\(\s*["']newStatus["']/);
     }
   });
+
+  it("keeps pending web item changes when a stale refresh returns old server props", async () => {
+    const logic = (await import("../app/app/board-logic")) as unknown as {
+      mergeInitialItemsWithPendingPatches?: (
+        items: Array<{ id: string; status: string; priority_score: number }>,
+        patches: Record<string, { status?: string; priority_score?: number }>,
+      ) => {
+        items: Array<{ id: string; status: string; priority_score: number }>;
+        remainingPatches: Record<string, { status?: string; priority_score?: number }>;
+      };
+    };
+
+    expect(typeof logic.mergeInitialItemsWithPendingPatches).toBe("function");
+
+    const staleInitialItems = [
+      { id: "item-1", status: "active", priority_score: 0.85 },
+      { id: "item-2", status: "active", priority_score: 0.7 },
+    ];
+
+    const merged = logic.mergeInitialItemsWithPendingPatches!(staleInitialItems, {
+      "item-1": { status: "completed" },
+      "item-2": { status: "active", priority_score: 0.4 },
+    });
+
+    expect(merged.items).toEqual([
+      { id: "item-1", status: "completed", priority_score: 0.85 },
+      { id: "item-2", status: "active", priority_score: 0.4 },
+    ]);
+    expect(merged.remainingPatches).toEqual({
+      "item-1": { status: "completed" },
+      "item-2": { status: "active", priority_score: 0.4 },
+    });
+  });
+
+  it("clears pending web item changes after fresh server props confirm them", async () => {
+    const logic = (await import("../app/app/board-logic")) as unknown as {
+      mergeInitialItemsWithPendingPatches?: (
+        items: Array<{ id: string; status: string; priority_score: number }>,
+        patches: Record<string, { status?: string; priority_score?: number }>,
+      ) => {
+        items: Array<{ id: string; status: string; priority_score: number }>;
+        remainingPatches: Record<string, { status?: string; priority_score?: number }>;
+      };
+    };
+
+    expect(typeof logic.mergeInitialItemsWithPendingPatches).toBe("function");
+
+    const freshInitialItems = [
+      { id: "item-1", status: "completed", priority_score: 0.85 },
+      { id: "item-2", status: "active", priority_score: 0.4 },
+    ];
+
+    const merged = logic.mergeInitialItemsWithPendingPatches!(freshInitialItems, {
+      "item-1": { status: "completed" },
+      "item-2": { status: "active", priority_score: 0.4 },
+    });
+
+    expect(merged.items).toEqual(freshInitialItems);
+    expect(merged.remainingPatches).toEqual({});
+  });
+
+  it("web board clients reconcile stale refreshes through pending item patches", async () => {
+    const fs = await import("node:fs/promises");
+    const board = await fs.readFile(resolve(process.cwd(), "app/app/board-client.tsx"), "utf8");
+    const myDay = await fs.readFile(resolve(process.cwd(), "app/app/my-day/my-day-client.tsx"), "utf8");
+
+    for (const [name, source] of [["board", board], ["my-day", myDay]] as const) {
+      expect(source, `${name} should preserve pending item patches across refresh`).toContain("mergeInitialItemsWithPendingPatches");
+      expect(source, `${name} should not blindly replace optimistic item state`).not.toMatch(/setItems\(\s*(initialItems|allActiveItems)\s*\)/);
+    }
+  });
+
+  it("web board clients rollback pending item patches when actions fail", async () => {
+    const fs = await import("node:fs/promises");
+    const board = await fs.readFile(resolve(process.cwd(), "app/app/board-client.tsx"), "utf8");
+    const myDay = await fs.readFile(resolve(process.cwd(), "app/app/my-day/my-day-client.tsx"), "utf8");
+
+    for (const [name, source] of [["board", board], ["my-day", myDay]] as const) {
+      expect(source, `${name} should have rollback helper`).toContain("rollbackItemPatch");
+      expect(source, `${name} should clear failed pending patches`).toContain("clearPendingItemPatch");
+      expect(source, `${name} should catch failed item actions`).toContain("catch (error)");
+    }
+  });
 });

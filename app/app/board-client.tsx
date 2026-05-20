@@ -46,7 +46,16 @@ import {
 } from "./actions";
 import { laneFromItem, type LaneKey } from "@/lib/items/lane";
 import type { InboxItem, LinkSummary, RecurrenceConfig } from "@/lib/items/types";
-import { asMetadata, filterBoardItems, getDragActivationDistance, getDragHandleLabel, isTrash, sortItemsForBoardLane } from "./board-logic";
+import {
+  asMetadata,
+  filterBoardItems,
+  getDragActivationDistance,
+  getDragHandleLabel,
+  isTrash,
+  mergeInitialItemsWithPendingPatches,
+  sortItemsForBoardLane,
+  type PendingItemPatch,
+} from "./board-logic";
 import { RecurrencePicker } from "./recurrence-picker";
 import { SubtaskTreePanel } from "./subtask-tree";
 
@@ -170,6 +179,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
   const [isPending, startTransition] = useTransition();
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const pendingItemPatchesRef = useRef<Record<string, PendingItemPatch>>({});
   const router = useRouter();
 
   const sensors = useSensors(
@@ -194,8 +204,35 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
   }, []);
 
   useEffect(() => {
-    setItems(initialItems);
+    const merged = mergeInitialItemsWithPendingPatches(initialItems, pendingItemPatchesRef.current);
+    pendingItemPatchesRef.current = merged.remainingPatches;
+    setItems(merged.items);
   }, [initialItems]);
+
+  function patchItemOptimistically(itemId: string, patch: PendingItemPatch) {
+    pendingItemPatchesRef.current = {
+      ...pendingItemPatchesRef.current,
+      [itemId]: {
+        ...pendingItemPatchesRef.current[itemId],
+        ...patch,
+      },
+    };
+
+    setItems((prev) =>
+      prev.map((item) => (item.id === itemId ? { ...item, ...patch } : item)),
+    );
+  }
+
+  function clearPendingItemPatch(itemId: string) {
+    const { [itemId]: _removed, ...rest } = pendingItemPatchesRef.current;
+    pendingItemPatchesRef.current = rest;
+  }
+
+  function rollbackItemPatch(itemId: string, previousItem: InboxItem | undefined) {
+    clearPendingItemPatch(itemId);
+    if (!previousItem) return;
+    setItems((prev) => prev.map((item) => (item.id === itemId ? previousItem : item)));
+  }
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -390,24 +427,22 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
     if (!toLane) return;
 
     if (toLane !== fromLane) {
-      setItems((prev) =>
-        prev.map((item) =>
-          item.id === activeId
-            ? {
-                ...item,
-                status: "active" as const,
-                priority_score:
-                  toLane === "today" ? 0.85
-                  : toLane === "next" ? 0.7
-                  : toLane === "upcoming" ? 0.55
-                  : 0.4,
-              }
-            : item,
-        ),
-      );
+      const previousItem = draggedItem;
+      patchItemOptimistically(activeId, {
+        status: "active",
+        priority_score: toLane === "today" ? 0.85 : toLane === "next" ? 0.7 : toLane === "upcoming" ? 0.55 : 0.4,
+      });
 
       startTransition(async () => {
-        await moveItemToLane({ itemId: activeId, fromLane, toLane });
+        try {
+          await moveItemToLane({ itemId: activeId, fromLane, toLane });
+          router.refresh();
+        } catch (error) {
+          rollbackItemPatch(activeId, previousItem);
+          setStatusMessage("Move failed. Please try again or sign in again if this keeps happening.");
+          console.error("Failed to move item from board", { itemId: activeId, fromLane, toLane, error });
+          router.refresh();
+        }
       });
     }
   }
@@ -415,29 +450,28 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
   const handleToggleStatus = useMemo(
     () => (itemId: string, currentStatus: InboxItem["status"]) => {
       const nextStatus = currentStatus === "completed" ? "active" : "completed";
+      const previousItem = items.find((item) => item.id === itemId);
 
       setStatusMessage(nextStatus === "completed" ? "Item marked completed." : "Item reopened.");
-      setItems((prev) =>
-        prev.map((entry) =>
-          entry.id === itemId
-            ? {
-                ...entry,
-                status: nextStatus,
-              }
-            : entry,
-        ),
-      );
+      patchItemOptimistically(itemId, { status: nextStatus });
 
       startTransition(async () => {
         const formData = new FormData();
         formData.set("itemId", itemId);
         formData.set("status", nextStatus);
 
-        await updateItemStatus(formData);
-        router.refresh();
+        try {
+          await updateItemStatus(formData);
+          router.refresh();
+        } catch (error) {
+          rollbackItemPatch(itemId, previousItem);
+          setStatusMessage("Update failed. Please try again or sign in again if this keeps happening.");
+          console.error("Failed to update item status from board", { itemId, nextStatus, error });
+          router.refresh();
+        }
       });
     },
-    [router],
+    [items, router],
   );
 
   function normalizeTag(tag: string) {

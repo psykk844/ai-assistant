@@ -21,7 +21,8 @@ export default function LoginPage() {
     // Hardcoded auth: sam / page
     if (email === "sam" && password === "page") {
       // Set a simple auth cookie
-      document.cookie = "auth=true; path=/; max-age=86400"; // 24h
+      const secureFlag = window.location.protocol === "https:" ? "; secure" : "";
+      document.cookie = `auth=true; path=/; max-age=2592000; samesite=lax${secureFlag}`;
       router.push("/app");
       router.refresh();
     } else {

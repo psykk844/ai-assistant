@@ -3,6 +3,7 @@ import type { LaneKey } from "@/lib/items/lane";
 import { readItemTags } from "./item-tags";
 
 type FilterKey = "all" | "active" | "completed" | "archived" | "todo" | "note" | "link" | "trash";
+export type PendingItemPatch = Partial<Pick<InboxItem, "status" | "priority_score" | "metadata">>;
 
 export function asMetadata(metadata: InboxItem["metadata"]): ItemMetadata {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return {};
@@ -70,6 +71,29 @@ export function normalizeItemTags<T extends { tags?: string[] | null }>(item: T)
     ...item,
     tags: readItemTags(item as T & { metadata?: Record<string, unknown> }),
   };
+}
+
+function patchMatchesItem(item: InboxItem, patch: PendingItemPatch) {
+  return Object.entries(patch).every(([key, value]) => item[key as keyof PendingItemPatch] === value);
+}
+
+export function mergeInitialItemsWithPendingPatches(
+  items: InboxItem[],
+  patches: Record<string, PendingItemPatch>,
+) {
+  const remainingPatches: Record<string, PendingItemPatch> = {};
+
+  const merged = items.map((item) => {
+    const patch = patches[item.id];
+    if (!patch) return item;
+
+    if (patchMatchesItem(item, patch)) return item;
+
+    remainingPatches[item.id] = patch;
+    return { ...item, ...patch };
+  });
+
+  return { items: merged, remainingPatches };
 }
 
 /**

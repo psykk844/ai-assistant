@@ -240,12 +240,12 @@ export async function updateItemStatus(formData: FormData) {
       statusAllowed: ALLOWED_STATUSES.has(status),
       formDataKeys: Array.from(formData.keys()),
     });
-    return;
+    throw new Error("Invalid item status update request");
   }
 
-  try {
-    await requireHardcodedSession();
+  await requireHardcodedSession();
 
+  try {
     const supabase = createAdminClient();
     const userId = await resolveSessionUserId();
 
@@ -263,7 +263,7 @@ export async function updateItemStatus(formData: FormData) {
         status,
         error: serializeError(existingError),
       });
-      return;
+      throw new Error(`Failed to load item for status update: ${existingError.message}`);
     }
 
     const metadata = asMetadata(existing?.metadata);
@@ -290,7 +290,7 @@ export async function updateItemStatus(formData: FormData) {
         status,
         error: serializeError(error),
       });
-      return;
+      throw new Error(`Failed to update item status: ${error.message}`);
     }
 
     if (updatedItem && status !== "archived") {
@@ -375,6 +375,7 @@ export async function updateItemStatus(formData: FormData) {
       status,
       error: serializeError(error),
     });
+    throw error;
   }
 }
 

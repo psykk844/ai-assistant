@@ -1,4 +1,4 @@
-import { classifyInput, type Classification, type ItemType } from "@/lib/smart/classifier";
+import { classifyInput, isStandaloneUrlInput, type Classification, type ItemType } from "@/lib/smart/classifier";
 
 type AiPayload = {
   type?: string;
@@ -40,16 +40,17 @@ function getClassifyTimeoutMs() {
   return configured;
 }
 
-function normalizeClassification(raw: AiPayload | null, fallback: Classification): Classification {
+function normalizeClassification(raw: AiPayload | null, fallback: Classification, content: string): Classification {
   if (!raw) return fallback;
 
   const confidence = clamp01(Number(raw.confidenceScore ?? fallback.confidenceScore), fallback.confidenceScore);
   const rawPriority = Number(raw.priorityScore ?? fallback.priorityScore);
   const normalizedPriority = rawPriority > 1 ? rawPriority / 10 : rawPriority;
   const priority = clamp01(normalizedPriority, fallback.priorityScore);
+  const type = asItemType(raw.type, fallback.type);
 
   return {
-    type: asItemType(raw.type, fallback.type),
+    type: type === "link" && !isStandaloneUrlInput(content) ? fallback.type : type,
     confidenceScore: confidence,
     needsReview: typeof raw.needsReview === "boolean" ? raw.needsReview : confidence < 0.75,
     priorityScore: priority,
@@ -131,13 +132,13 @@ export async function classifySmartInput(content: string, userPreferenceContext?
     const textCandidate = (payload.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content;
     if (typeof textCandidate === "string") {
       const parsed = parseJsonBlock(textCandidate);
-      return normalizeClassification(parsed, fallback);
+      return normalizeClassification(parsed, fallback, content);
     }
 
     // Direct object response (some proxies)
     const direct = (payload.classification ?? payload.output) as AiPayload | undefined;
     if (direct && typeof direct === "object") {
-      return normalizeClassification(direct, fallback);
+      return normalizeClassification(direct, fallback, content);
     }
 
     return {

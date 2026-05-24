@@ -10,13 +10,18 @@ export type Classification = {
 };
 
 const urlRegex = /(https?:\/\/[^\s]+)/i;
+const standaloneUrlRegex = /^https?:\/\/[^\s<>"]+$/i;
 const todoRegex = /^(todo:|task:|- \[ \]|\[ \]|remember to|need to|should|must)/i;
+
+export function isStandaloneUrlInput(raw: string) {
+  return standaloneUrlRegex.test(raw.trim());
+}
 
 export function classifyInput(raw: string): Classification {
   const content = raw.trim();
   const firstLine = content.split("\n")[0]?.trim() ?? "";
 
-  if (urlRegex.test(content)) {
+  if (isStandaloneUrlInput(content)) {
     const url = content.match(urlRegex)?.[0] ?? null;
     return {
       type: "link",

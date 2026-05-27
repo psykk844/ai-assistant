@@ -11,7 +11,7 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 type DbError = { message?: string } | null;
 
 const ITEM_COLUMNS = "id,user_id,title,content,type,status,metadata,created_at,updated_at";
-const REQUIRED_ENV_KEYS = ["APIFY_REDDIT_ACTOR", "APIFY_X_ACTOR", "APIFY_FACEBOOK_ACTOR", "OARS_API_KEY"];
+const REQUIRED_ENV_KEYS = ["APIFY_REDDIT_ACTOR", "APIFY_X_ACTOR", "APIFY_FACEBOOK_ACTOR", "QUATARLY_API_KEY"];
 
 export async function processLinkBatch(options: BatchOptions = {}): Promise<ProcessLinksSummary> {
   const summary = emptySummary();

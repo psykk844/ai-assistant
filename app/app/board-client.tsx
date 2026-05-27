@@ -666,7 +666,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                 </div>
               )}
 
-              <p className="mt-2 text-sm text-[var(--text-muted)]">Classifier routes entries via Claude Opus through OARS.</p>
+              <p className="mt-2 text-sm text-[var(--text-muted)]">Classifier routes entries via Sonnet 4.6 through Quatarly.</p>
 
               <InboxComposer
                 action={captureInboxItem}

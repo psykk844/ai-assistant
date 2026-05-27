@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { chatWithContext } from "@/lib/ai/oars";
+import { chatWithContext } from "@/lib/ai/quatarly";
 
 type SuggestTagsBody = {
   content?: string;

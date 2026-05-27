@@ -1,7 +1,7 @@
 import type { ExtractedSocialLink, LinkBrief } from "./types";
+import { quatarlyApiKey, quatarlyBaseUrl, quatarlyChatModel } from "../ai/quatarly";
 
-const DEFAULT_OARS_BASE_URL = "https://llm.digiwebfr.studio/v1";
-const DEFAULT_SUMMARY_MODEL = "gpt-5.5";
+const DEFAULT_SUMMARY_MODEL = "claude-sonnet-4-6-thinking";
 const TEXT_LIMIT = 8000;
 const COMMENT_LIMIT = 50;
 const COMMENT_TEXT_LIMIT = 8000;
@@ -23,10 +23,10 @@ export function isRetryableSummaryError(error: unknown): error is RetryableSumma
 }
 
 export async function summarizeExtractedLink(extracted: ExtractedSocialLink): Promise<LinkBrief> {
-  const apiKey = process.env.OARS_API_KEY?.trim();
+  const apiKey = summaryApiKey();
 
   if (!apiKey) {
-    throw new Error("Missing OARS_API_KEY");
+    throw new Error("Missing QUATARLY_API_KEY");
   }
 
   for (let attempt = 1; attempt <= SUMMARY_ATTEMPTS; attempt += 1) {
@@ -39,7 +39,7 @@ export async function summarizeExtractedLink(extracted: ExtractedSocialLink): Pr
     }
   }
 
-  throw new RetryableSummaryError("OARS summary retry failed");
+  throw new RetryableSummaryError("Quatarly summary retry failed");
 }
 
 async function requestSummary(extracted: ExtractedSocialLink, apiKey: string): Promise<LinkBrief> {
@@ -48,7 +48,7 @@ async function requestSummary(extracted: ExtractedSocialLink, apiKey: string): P
   let response: Response;
 
   try {
-    response = await fetch(`${oarsBaseUrl()}/chat/completions`, {
+    response = await fetch(`${quatarlyBaseUrl()}/chat/completions`, {
       method: "POST",
       signal: controller.signal,
       headers: {
@@ -59,6 +59,7 @@ async function requestSummary(extracted: ExtractedSocialLink, apiKey: string): P
         model: summaryModel(),
         temperature: 0.1,
         max_tokens: MAX_TOKENS,
+        response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt() },
           { role: "user", content: userPrompt(extracted) },
@@ -68,42 +69,42 @@ async function requestSummary(extracted: ExtractedSocialLink, apiKey: string): P
     });
   } catch (error) {
     if (isAbortError(error)) {
-      throw new RetryableSummaryError("OARS summary request timed out");
+      throw new RetryableSummaryError("Quatarly summary request timed out");
     }
 
-    throw new RetryableSummaryError(`OARS summary request failed: ${errorMessage(error)}`);
+    throw new RetryableSummaryError(`Quatarly summary request failed: ${errorMessage(error)}`);
   } finally {
     clearTimeout(timeout);
   }
 
   if (!response.ok) {
     if (RETRYABLE_HTTP_STATUSES.has(response.status)) {
-      throw new RetryableSummaryError(`OARS summary failed with HTTP ${response.status}`);
+      throw new RetryableSummaryError(`Quatarly summary failed with HTTP ${response.status}`);
     }
 
-    throw new Error(`OARS summary failed with HTTP ${response.status}`);
+    throw new Error(`Quatarly summary failed with HTTP ${response.status}`);
   }
 
   const payload = (await response.json()) as ChatCompletionResponse;
   const content = payload.choices?.[0]?.message?.content?.trim();
 
   if (!content) {
-    throw new Error("OARS summary returned empty content");
+    throw new Error("Quatarly summary returned empty content");
   }
 
-  return normalizeBrief(JSON.parse(stripJsonFence(content)), extracted);
+  return normalizeBrief(parseBriefJson(content), extracted);
 }
 
-function oarsBaseUrl() {
-  return (process.env.OARS_BASE_URL?.trim() || DEFAULT_OARS_BASE_URL).replace(/\/+$/, "");
+function summaryApiKey() {
+  return quatarlyApiKey();
 }
 
 function summaryModel() {
-  return process.env.OARS_LINK_SUMMARY_MODEL?.trim() || DEFAULT_SUMMARY_MODEL;
+  return process.env.QUATARLY_LINK_SUMMARY_MODEL?.trim() || quatarlyChatModel() || DEFAULT_SUMMARY_MODEL;
 }
 
 function summaryTimeoutMs() {
-  const configured = Number(process.env.OARS_LINK_SUMMARY_TIMEOUT_MS ?? DEFAULT_SUMMARY_TIMEOUT_MS);
+  const configured = Number(process.env.QUATARLY_LINK_SUMMARY_TIMEOUT_MS ?? DEFAULT_SUMMARY_TIMEOUT_MS);
   return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_SUMMARY_TIMEOUT_MS;
 }
 
@@ -156,6 +157,14 @@ function commentsPayload(comments: string[]) {
 function stripJsonFence(content: string) {
   const fenced = content.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   return fenced ? fenced[1].trim() : content;
+}
+
+function parseBriefJson(content: string) {
+  try {
+    return JSON.parse(stripJsonFence(content));
+  } catch {
+    throw new RetryableSummaryError("Quatarly summary returned invalid JSON");
+  }
 }
 
 function normalizeBrief(value: unknown, extracted: ExtractedSocialLink): LinkBrief {

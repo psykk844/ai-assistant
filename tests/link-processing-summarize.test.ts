@@ -2,26 +2,26 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { isRetryableSummaryError, summarizeExtractedLink } from "../lib/link-processing/summarize";
 import type { ExtractedSocialLink } from "../lib/link-processing/types";
 
-const priorApiKey = process.env.OARS_API_KEY;
-const priorBaseUrl = process.env.OARS_BASE_URL;
-const priorSummaryModel = process.env.OARS_LINK_SUMMARY_MODEL;
-const priorModel = process.env.OARS_MODEL;
-const priorTimeout = process.env.OARS_LINK_SUMMARY_TIMEOUT_MS;
+const priorQuatarlyApiKey = process.env.QUATARLY_API_KEY;
+const priorQuatarlyBaseUrl = process.env.QUATARLY_OPENAI_BASE_URL;
+const priorSummaryModel = process.env.QUATARLY_LINK_SUMMARY_MODEL;
+const priorModel = process.env.QUATARLY_MODEL;
+const priorTimeout = process.env.QUATARLY_LINK_SUMMARY_TIMEOUT_MS;
 
 afterEach(() => {
-  restoreEnv("OARS_API_KEY", priorApiKey);
-  restoreEnv("OARS_BASE_URL", priorBaseUrl);
-  restoreEnv("OARS_LINK_SUMMARY_MODEL", priorSummaryModel);
-  restoreEnv("OARS_MODEL", priorModel);
-  restoreEnv("OARS_LINK_SUMMARY_TIMEOUT_MS", priorTimeout);
+  restoreEnv("QUATARLY_API_KEY", priorQuatarlyApiKey);
+  restoreEnv("QUATARLY_OPENAI_BASE_URL", priorQuatarlyBaseUrl);
+  restoreEnv("QUATARLY_LINK_SUMMARY_MODEL", priorSummaryModel);
+  restoreEnv("QUATARLY_MODEL", priorModel);
+  restoreEnv("QUATARLY_LINK_SUMMARY_TIMEOUT_MS", priorTimeout);
   vi.unstubAllGlobals();
 });
 
 describe("social link summarization", () => {
-  it("requests a detailed JSON brief from OARS and returns normalized fields", async () => {
-    process.env.OARS_API_KEY = "test-oars-key";
-    process.env.OARS_BASE_URL = "https://oars.example.test/v1/";
-    process.env.OARS_LINK_SUMMARY_MODEL = "link-summary-model";
+  it("requests a detailed JSON brief from Quatarly and returns normalized fields", async () => {
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
+    process.env.QUATARLY_OPENAI_BASE_URL = "https://api.quatarly.example/v1/";
+    process.env.QUATARLY_LINK_SUMMARY_MODEL = "link-summary-model";
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
       jsonResponse({
         choices: [
@@ -53,15 +53,16 @@ describe("social link summarization", () => {
       tags: ["planning", "links"],
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://oars.example.test/v1/chat/completions");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.quatarly.example/v1/chat/completions");
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.cache).toBe("no-store");
     expect(init.headers).toEqual({
-      Authorization: "Bearer test-oars-key",
+      Authorization: "Bearer test-quatarly-key",
       "Content-Type": "application/json",
     });
     const body = JSON.parse(String(init.body));
     expect(body.model).toBe("link-summary-model");
+    expect(body.response_format).toEqual({ type: "json_object" });
     expect(body.temperature).toBe(0.1);
     expect(body.max_tokens).toBe(1400);
     expect(body.messages[0].content).toContain("strict JSON");
@@ -73,15 +74,52 @@ describe("social link summarization", () => {
     expect(body.messages[1].content).toContain("First comment");
   });
 
-  it("requires OARS_API_KEY", async () => {
-    delete process.env.OARS_API_KEY;
+  it("requires QUATARLY_API_KEY", async () => {
+    delete process.env.QUATARLY_API_KEY;
 
-    await expect(summarizeExtractedLink(fixtureExtractedLink())).rejects.toThrow("Missing OARS_API_KEY");
+    await expect(summarizeExtractedLink(fixtureExtractedLink())).rejects.toThrow("Missing QUATARLY_API_KEY");
+  });
+
+  it("uses Quatarly credentials and base URL", async () => {
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
+    process.env.QUATARLY_OPENAI_BASE_URL = "https://api.quatarly.example/v1/";
+    process.env.QUATARLY_LINK_SUMMARY_MODEL = "claude-sonnet-4-6-thinking";
+    const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
+      jsonResponse({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: "Quatarly Summary",
+                whySaved: "It verifies the new provider path.",
+                fullContext: "The summary was produced through the Quatarly-compatible endpoint.",
+                keyPoints: ["Uses Quatarly credentials"],
+                notableDetails: ["Uses JSON response format"],
+                tags: ["links"],
+              }),
+            },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(summarizeExtractedLink(fixtureExtractedLink())).resolves.toMatchObject({ title: "Quatarly Summary" });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.quatarly.example/v1/chat/completions");
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.headers).toEqual({
+      Authorization: "Bearer test-quatarly-key",
+      "Content-Type": "application/json",
+    });
+    const body = JSON.parse(String(init.body));
+    expect(body.model).toBe("claude-sonnet-4-6-thinking");
+    expect(body.response_format).toEqual({ type: "json_object" });
   });
 
   it("parses fenced JSON content", async () => {
-    process.env.OARS_API_KEY = "test-oars-key";
-    process.env.OARS_LINK_SUMMARY_MODEL = "link-summary-model";
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
+    process.env.QUATARLY_LINK_SUMMARY_MODEL = "link-summary-model";
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
       jsonResponse({
         choices: [
@@ -116,10 +154,10 @@ describe("social link summarization", () => {
     expect(body.model).toBe("link-summary-model");
   });
 
-  it("uses the default link summary model instead of the general OARS model", async () => {
-    process.env.OARS_API_KEY = "test-oars-key";
-    process.env.OARS_MODEL = "slow-general-model";
-    delete process.env.OARS_LINK_SUMMARY_MODEL;
+  it("uses the default link summary model when no model env is configured", async () => {
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
+    delete process.env.QUATARLY_MODEL;
+    delete process.env.QUATARLY_LINK_SUMMARY_MODEL;
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
       jsonResponse({
         choices: [
@@ -143,21 +181,21 @@ describe("social link summarization", () => {
     await summarizeExtractedLink(fixtureExtractedLink());
 
     const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
-    expect(body.model).toBe("gpt-5.5");
+    expect(body.model).toBe("claude-sonnet-4-6-thinking");
   });
 
-  it("throws the OARS HTTP status when summarization fails", async () => {
-    process.env.OARS_API_KEY = "test-oars-key";
+  it("throws the Quatarly HTTP status when summarization fails", async () => {
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
       jsonResponse({ error: "bad request" }, { ok: false, status: 429, statusText: "Too Many Requests" }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(summarizeExtractedLink(fixtureExtractedLink())).rejects.toThrow("OARS summary failed with HTTP 429");
+    await expect(summarizeExtractedLink(fixtureExtractedLink())).rejects.toThrow("Quatarly summary failed with HTTP 429");
   });
 
-  it.each([429, 500, 502, 503, 504, 524])("marks transient OARS HTTP %s failures as retryable", async (status) => {
-    process.env.OARS_API_KEY = "test-oars-key";
+  it.each([429, 500, 502, 503, 504, 524])("marks transient Quatarly HTTP %s failures as retryable", async (status) => {
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ error: "temporary outage" }, { ok: false, status })));
 
     await expect(summarizeExtractedLink(fixtureExtractedLink())).rejects.toMatchObject({ retryable: true });
@@ -169,8 +207,15 @@ describe("social link summarization", () => {
     }
   });
 
-  it("retries once when OARS returns a transient failure before falling back", async () => {
-    process.env.OARS_API_KEY = "test-oars-key";
+  it("marks malformed Quatarly JSON as retryable", async () => {
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ choices: [{ message: { content: "not json" } }] })));
+
+    await expect(summarizeExtractedLink(fixtureExtractedLink())).rejects.toMatchObject({ retryable: true });
+  });
+
+  it("retries once when Quatarly returns a transient failure before falling back", async () => {
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ error: "temporary outage" }, { ok: false, status: 524 }))
       .mockResolvedValueOnce(jsonResponse({
@@ -180,7 +225,7 @@ describe("social link summarization", () => {
               content: JSON.stringify({
                 title: "Recovered Summary",
                 whySaved: "The retry succeeded.",
-                fullContext: "The article was summarized after a transient OARS failure.",
+                fullContext: "The article was summarized after a transient Quatarly failure.",
                 keyPoints: ["Retry before fallback"],
                 notableDetails: ["First request returned HTTP 524."],
                 tags: ["retry"],
@@ -194,7 +239,7 @@ describe("social link summarization", () => {
     await expect(summarizeExtractedLink(fixtureExtractedLink())).resolves.toEqual({
       title: "Recovered Summary",
       whySaved: "The retry succeeded.",
-      fullContext: "The article was summarized after a transient OARS failure.",
+      fullContext: "The article was summarized after a transient Quatarly failure.",
       keyPoints: ["Retry before fallback"],
       notableDetails: ["First request returned HTTP 524."],
       tags: ["retry"],
@@ -202,9 +247,9 @@ describe("social link summarization", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("aborts stalled OARS summary requests as retryable", async () => {
-    process.env.OARS_API_KEY = "test-oars-key";
-    process.env.OARS_LINK_SUMMARY_TIMEOUT_MS = "25";
+  it("aborts stalled Quatarly summary requests as retryable", async () => {
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
+    process.env.QUATARLY_LINK_SUMMARY_TIMEOUT_MS = "25";
     vi.stubGlobal("fetch", vi.fn(async (_url: string | URL, init?: RequestInit) => {
       await new Promise((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
@@ -215,8 +260,8 @@ describe("social link summarization", () => {
     await expect(summarizeExtractedLink(fixtureExtractedLink())).rejects.toMatchObject({ retryable: true });
   });
 
-  it("marks OARS request network failures as retryable", async () => {
-    process.env.OARS_API_KEY = "test-oars-key";
+  it("marks Quatarly request network failures as retryable", async () => {
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
     vi.stubGlobal("fetch", vi.fn(async () => {
       throw new TypeError("fetch failed");
     }));
@@ -225,7 +270,7 @@ describe("social link summarization", () => {
   });
 
   it("marks extracted post text and comments as untrusted source data", async () => {
-    process.env.OARS_API_KEY = "test-oars-key";
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
       jsonResponse({
         choices: [
@@ -262,7 +307,7 @@ describe("social link summarization", () => {
   });
 
   it("escapes source delimiter text inside extracted content", async () => {
-    process.env.OARS_API_KEY = "test-oars-key";
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
       jsonResponse({
         choices: [
@@ -297,7 +342,7 @@ describe("social link summarization", () => {
   });
 
   it("serializes malicious metadata as untrusted source data", async () => {
-    process.env.OARS_API_KEY = "test-oars-key";
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
       jsonResponse({
         choices: [
@@ -337,7 +382,7 @@ describe("social link summarization", () => {
   });
 
   it("caps joined comments payload to 8000 characters total", async () => {
-    process.env.OARS_API_KEY = "test-oars-key";
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
       jsonResponse({
         choices: [
@@ -346,7 +391,7 @@ describe("social link summarization", () => {
               content: JSON.stringify({
                 title: "Capped Comments Summary",
                 whySaved: "It contains many long comments.",
-                fullContext: "The comments payload should be bounded before sending to OARS.",
+                fullContext: "The comments payload should be bounded before sending to Quatarly.",
                 keyPoints: [],
                 notableDetails: [],
                 tags: [],
@@ -370,7 +415,7 @@ describe("social link summarization", () => {
   });
 
   it("limits comments payload to the first 50 comments before joining", async () => {
-    process.env.OARS_API_KEY = "test-oars-key";
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
       jsonResponse({
         choices: [

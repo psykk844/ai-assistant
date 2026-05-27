@@ -2,15 +2,18 @@ type EmbeddingResponse = {
   data?: Array<{ embedding?: number[] }>;
 };
 
+const DEFAULT_BASE_URL = "https://api.quatarly.cloud/v1";
+const DEFAULT_CHAT_MODEL = "claude-sonnet-4-6-thinking";
+const DEFAULT_EMBED_MODEL = "text-embedding-3-small";
+
 export async function embedText(input: string): Promise<number[] | null> {
-  const apiKey = process.env.OARS_API_KEY?.trim();
+  const apiKey = quatarlyApiKey();
   if (!apiKey) return deterministicEmbedding(input);
 
-  const baseUrl = (process.env.OARS_BASE_URL?.trim() || "https://llm.digiwebfr.studio/v1").replace(/\/$/, "");
-  const model = process.env.OARS_EMBED_MODEL?.trim() || "text-embedding-3-small";
+  const model = process.env.QUATARLY_EMBED_MODEL?.trim() || DEFAULT_EMBED_MODEL;
 
   try {
-    const response = await fetch(`${baseUrl}/embeddings`, {
+    const response = await fetch(`${quatarlyBaseUrl()}/embeddings`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -34,13 +37,12 @@ export async function embedText(input: string): Promise<number[] | null> {
 }
 
 export async function chatWithContext(question: string, contextBlocks: string[]): Promise<string> {
-  const apiKey = process.env.OARS_API_KEY?.trim();
+  const apiKey = quatarlyApiKey();
   if (!apiKey) {
     return `I could not reach the AI provider. Here is the relevant context:\n\n${contextBlocks.slice(0, 4).join("\n\n---\n\n")}`;
   }
 
-  const baseUrl = (process.env.OARS_BASE_URL?.trim() || "https://llm.digiwebfr.studio/v1").replace(/\/$/, "");
-  const model = process.env.OARS_MODEL?.trim() || "claude-opus-4-6";
+  const model = quatarlyChatModel();
 
   const system = "You are a grounded productivity assistant. Answer using only provided context when possible. Cite sources with [source] markers.";
   const context = contextBlocks.length
@@ -48,7 +50,7 @@ export async function chatWithContext(question: string, contextBlocks: string[])
     : "No context found.";
 
   try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const response = await fetch(`${quatarlyBaseUrl()}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -78,6 +80,18 @@ ${question}` },
   } catch {
     return "AI request failed.";
   }
+}
+
+export function quatarlyApiKey() {
+  return process.env.QUATARLY_API_KEY?.trim() || "";
+}
+
+export function quatarlyBaseUrl() {
+  return (process.env.QUATARLY_OPENAI_BASE_URL?.trim() || DEFAULT_BASE_URL).replace(/\/+$/, "");
+}
+
+export function quatarlyChatModel() {
+  return process.env.QUATARLY_MODEL?.trim() || DEFAULT_CHAT_MODEL;
 }
 
 function deterministicEmbedding(input: string): number[] {

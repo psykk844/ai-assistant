@@ -1,4 +1,5 @@
 import type { InboxItem } from "@/lib/items/types";
+import { quatarlyApiKey, quatarlyBaseUrl, quatarlyChatModel } from "@/lib/ai/quatarly";
 
 export interface BriefingContext {
   totalToday: number;
@@ -68,9 +69,9 @@ export async function generateAIBriefing(
   const ctx = buildBriefingContext(todayItems, overdueItems, staleItems);
 
   try {
-    const baseUrl = process.env.OARS_BASE_URL ?? "https://llm.digiwebfr.studio/v1";
-    const apiKey = process.env.OARS_API_KEY ?? "";
-    const model = process.env.OARS_MODEL ?? "claude-opus-4-6";
+    const baseUrl = quatarlyBaseUrl();
+    const apiKey = quatarlyApiKey();
+    const model = quatarlyChatModel();
 
     if (!apiKey) return buildFallbackBriefing(todayItems, overdueItems, staleItems);
 

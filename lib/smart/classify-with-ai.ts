@@ -1,4 +1,5 @@
 import { classifyInput, isStandaloneUrlInput, type Classification, type ItemType } from "@/lib/smart/classifier";
+import { quatarlyApiKey, quatarlyBaseUrl, quatarlyChatModel } from "../ai/quatarly";
 
 type AiPayload = {
   type?: string;
@@ -35,7 +36,7 @@ function parseJsonBlock(input: string): AiPayload | null {
 }
 
 function getClassifyTimeoutMs() {
-  const configured = Number(process.env.OARS_CLASSIFY_TIMEOUT_MS ?? 8000);
+  const configured = Number(process.env.QUATARLY_CLASSIFY_TIMEOUT_MS ?? 8000);
   if (!Number.isFinite(configured) || configured <= 0) return 8000;
   return configured;
 }
@@ -58,7 +59,7 @@ function normalizeClassification(raw: AiPayload | null, fallback: Classification
     metadata: {
       ...fallback.metadata,
       ...(raw.metadata ?? {}),
-      source: "oars",
+      source: "quatarly",
     },
   };
 }
@@ -66,16 +67,16 @@ function normalizeClassification(raw: AiPayload | null, fallback: Classification
 export async function classifySmartInput(content: string, userPreferenceContext?: string): Promise<Classification> {
   const fallback = classifyInput(content);
 
-  const apiKey = process.env.OARS_API_KEY;
+  const apiKey = quatarlyApiKey();
   if (!apiKey) {
     return {
       ...fallback,
-      metadata: { ...fallback.metadata, source: "stub-classifier", fallbackReason: "missing-oars-api-key" },
+      metadata: { ...fallback.metadata, source: "stub-classifier", fallbackReason: "missing-quatarly-api-key" },
     };
   }
 
-  const baseUrl = (process.env.OARS_BASE_URL ?? "https://llm.digiwebfr.studio/v1").replace(/\/$/, "");
-  const model = process.env.OARS_MODEL ?? "claude-opus-4-6";
+  const baseUrl = quatarlyBaseUrl();
+  const model = quatarlyChatModel();
 
   const prompt = `Classify this personal productivity inbox entry into one of: note, todo, link. Return only strict JSON with keys: type, confidenceScore, needsReview, priorityScore, title, metadata.\n\nEntry:\n${content}`;
 
@@ -121,7 +122,7 @@ export async function classifySmartInput(content: string, userPreferenceContext?
         metadata: {
           ...fallback.metadata,
           source: "stub-classifier",
-          fallbackReason: `oars-http-${response.status}`,
+          fallbackReason: `quatarly-http-${response.status}`,
         },
       };
     }
@@ -143,7 +144,7 @@ export async function classifySmartInput(content: string, userPreferenceContext?
 
     return {
       ...fallback,
-      metadata: { ...fallback.metadata, source: "stub-classifier", fallbackReason: "unexpected-oars-payload" },
+      metadata: { ...fallback.metadata, source: "stub-classifier", fallbackReason: "unexpected-quatarly-payload" },
     };
   } catch (error) {
     return {
@@ -151,7 +152,7 @@ export async function classifySmartInput(content: string, userPreferenceContext?
       metadata: {
         ...fallback.metadata,
         source: "stub-classifier",
-        fallbackReason: didTimeout ? "oars-request-timeout" : "oars-request-failed",
+        fallbackReason: didTimeout ? "quatarly-request-timeout" : "quatarly-request-failed",
         error: error instanceof Error ? error.message : "unknown",
       },
     };

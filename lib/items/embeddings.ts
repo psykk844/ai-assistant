@@ -1,4 +1,4 @@
-import { embedText } from "@/lib/ai/oars";
+import { embedText } from "@/lib/ai/quatarly";
 import { ensureCollection, upsertPoints } from "@/lib/qdrant/client";
 import { createHash } from "node:crypto";
 

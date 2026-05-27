@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { embedText } from "@/lib/ai/oars";
+import { embedText } from "@/lib/ai/quatarly";
 import { chunkMarkdown, extractFrontmatter } from "@/lib/vault/chunk";
 import { ensureCollection, upsertPoints } from "@/lib/qdrant/client";
 import { createHash } from "node:crypto";

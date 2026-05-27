@@ -8,7 +8,7 @@ const mixedLinkEntry =
 describe("URL content classification", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    delete process.env.OARS_API_KEY;
+    delete process.env.QUATARLY_API_KEY;
   });
 
   it("classifies a bare URL as a link", () => {
@@ -20,7 +20,7 @@ describe("URL content classification", () => {
   });
 
   it("does not let AI override mixed text and links into a link", async () => {
-    process.env.OARS_API_KEY = "test-key";
+    process.env.QUATARLY_API_KEY = "test-key";
     vi.stubGlobal(
       "fetch",
       vi.fn(() =>

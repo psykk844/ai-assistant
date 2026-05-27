@@ -1,10 +1,12 @@
+import { quatarlyApiKey, quatarlyBaseUrl, quatarlyChatModel } from "../ai/quatarly";
+
 /**
  * Fetch a URL, extract text content, and generate an AI summary.
  * Returns metadata fields to merge into the item's metadata.
  */
 
 const URL_REGEX = /(https?:\/\/[^\s<>"']+)/i;
-const DEFAULT_LINK_SUMMARY_MODEL = "gpt-5.5";
+const DEFAULT_LINK_SUMMARY_MODEL = "claude-sonnet-4-6-thinking";
 
 export function extractUrl(content: string): string | null {
   const match = content.match(URL_REGEX);
@@ -79,9 +81,9 @@ export async function fetchLinkSummary(url: string): Promise<{
       .slice(0, 2000);
 
     // Generate AI summary
-    const baseUrl = process.env.OARS_BASE_URL ?? "https://llm.digiwebfr.studio/v1";
-    const apiKey = process.env.OARS_API_KEY ?? "";
-    const model = process.env.OARS_LINK_SUMMARY_MODEL?.trim() || DEFAULT_LINK_SUMMARY_MODEL;
+    const baseUrl = linkSummaryBaseUrl();
+    const apiKey = linkSummaryApiKey();
+    const model = process.env.QUATARLY_LINK_SUMMARY_MODEL?.trim() || quatarlyChatModel() || DEFAULT_LINK_SUMMARY_MODEL;
 
     if (apiKey && bodyText.length > 50) {
       const aiRes = await fetch(`${baseUrl}/chat/completions`, {
@@ -91,10 +93,11 @@ export async function fetchLinkSummary(url: string): Promise<{
           model,
           max_tokens: 150,
           temperature: 0,
+          response_format: { type: "json_object" },
           messages: [
             {
               role: "system",
-              content: "Summarize this web page in 1-2 sentences. Be concise and useful. Focus on what the page is about and why someone saved it. No markdown.",
+              content: "Return strict JSON only with a summary string. Format: {\"summary\":\"1-2 concise useful sentences about what the page is about and why someone saved it.\"}",
             },
             {
               role: "user",
@@ -106,7 +109,7 @@ export async function fetchLinkSummary(url: string): Promise<{
 
       if (aiRes.ok) {
         const data = await aiRes.json();
-        result.ai_summary = data.choices?.[0]?.message?.content?.trim()?.slice(0, 300) ?? null;
+        result.ai_summary = parseSummaryJson(data.choices?.[0]?.message?.content).slice(0, 300) || null;
       }
     }
 
@@ -119,4 +122,27 @@ export async function fetchLinkSummary(url: string): Promise<{
   }
 
   return result;
+}
+
+function linkSummaryApiKey() {
+  return quatarlyApiKey();
+}
+
+function linkSummaryBaseUrl() {
+  return quatarlyBaseUrl();
+}
+
+function parseSummaryJson(content: unknown) {
+  if (typeof content !== "string") return "";
+  try {
+    const parsed = JSON.parse(stripJsonFence(content));
+    return typeof parsed.summary === "string" ? parsed.summary.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+function stripJsonFence(content: string) {
+  const fenced = content.trim().match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenced ? fenced[1].trim() : content.trim();
 }

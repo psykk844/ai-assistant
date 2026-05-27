@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { quatarlyApiKey, quatarlyBaseUrl, quatarlyChatModel } from "@/lib/ai/quatarly";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireHardcodedSession } from "@/lib/auth/session";
 import { resolveSessionUserId } from "@/lib/auth/session-user";
@@ -38,9 +39,9 @@ export async function GET(req: NextRequest) {
   // Step 2: AI semantic ranking — send query + items to LLM
   let aiRankedIds: string[] = [];
   try {
-    const baseUrl = process.env.OARS_BASE_URL ?? "https://llm.digiwebfr.studio/v1";
-    const apiKey = process.env.OARS_API_KEY ?? "";
-    const model = process.env.OARS_MODEL ?? "claude-sonnet-4-6";
+    const baseUrl = quatarlyBaseUrl();
+    const apiKey = quatarlyApiKey();
+    const model = quatarlyChatModel();
 
     if (apiKey) {
       // Build compact item summaries for the LLM

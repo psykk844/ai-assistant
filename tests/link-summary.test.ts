@@ -1,35 +1,56 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchLinkSummary } from "../lib/items/link-summary";
 
-const priorApiKey = process.env.OARS_API_KEY;
-const priorBaseUrl = process.env.OARS_BASE_URL;
-const priorLinkSummaryModel = process.env.OARS_LINK_SUMMARY_MODEL;
-const priorModel = process.env.OARS_MODEL;
+const priorQuatarlyApiKey = process.env.QUATARLY_API_KEY;
+const priorQuatarlyBaseUrl = process.env.QUATARLY_OPENAI_BASE_URL;
+const priorLinkSummaryModel = process.env.QUATARLY_LINK_SUMMARY_MODEL;
+const priorModel = process.env.QUATARLY_MODEL;
 
 afterEach(() => {
-  restoreEnv("OARS_API_KEY", priorApiKey);
-  restoreEnv("OARS_BASE_URL", priorBaseUrl);
-  restoreEnv("OARS_LINK_SUMMARY_MODEL", priorLinkSummaryModel);
-  restoreEnv("OARS_MODEL", priorModel);
+  restoreEnv("QUATARLY_API_KEY", priorQuatarlyApiKey);
+  restoreEnv("QUATARLY_OPENAI_BASE_URL", priorQuatarlyBaseUrl);
+  restoreEnv("QUATARLY_LINK_SUMMARY_MODEL", priorLinkSummaryModel);
+  restoreEnv("QUATARLY_MODEL", priorModel);
   vi.unstubAllGlobals();
 });
 
 describe("link metadata summary", () => {
-  it("uses the dedicated link summary model instead of the general OARS model", async () => {
-    process.env.OARS_API_KEY = "test-oars-key";
-    process.env.OARS_BASE_URL = "https://oars.example.test/v1";
-    process.env.OARS_MODEL = "slow-general-model";
-    delete process.env.OARS_LINK_SUMMARY_MODEL;
+  it("uses Quatarly credentials and the default Sonnet 4.6 thinking model", async () => {
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
+    process.env.QUATARLY_OPENAI_BASE_URL = "https://api.quatarly.example/v1";
+    process.env.QUATARLY_MODEL = "claude-sonnet-4-6-thinking";
+    delete process.env.QUATARLY_LINK_SUMMARY_MODEL;
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(pageHtml(), { status: 200, headers: { "content-type": "text/html" } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "Short useful summary." } }] }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: "Short useful summary." }) } }] }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await fetchLinkSummary("https://example.com/article");
 
     expect(result.ai_summary).toBe("Short useful summary.");
     const aiBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
-    expect(aiBody.model).toBe("gpt-5.5");
+    expect(aiBody.model).toBe("claude-sonnet-4-6-thinking");
+    expect(aiBody.response_format).toEqual({ type: "json_object" });
+  });
+
+  it("uses the dedicated Quatarly link summary model when configured", async () => {
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
+    process.env.QUATARLY_OPENAI_BASE_URL = "https://api.quatarly.example/v1/";
+    process.env.QUATARLY_LINK_SUMMARY_MODEL = "claude-sonnet-4-6-thinking";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(pageHtml(), { status: 200, headers: { "content-type": "text/html" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: "Quatarly summary." }) } }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchLinkSummary("https://example.com/article");
+
+    expect(result.ai_summary).toBe("Quatarly summary.");
+    expect(fetchMock.mock.calls[1][0]).toBe("https://api.quatarly.example/v1/chat/completions");
+    const init = fetchMock.mock.calls[1][1] as RequestInit;
+    expect(init.headers).toEqual({ "Content-Type": "application/json", Authorization: "Bearer test-quatarly-key" });
+    const body = JSON.parse(String(init.body));
+    expect(body.model).toBe("claude-sonnet-4-6-thinking");
+    expect(body.response_format).toEqual({ type: "json_object" });
   });
 });
 

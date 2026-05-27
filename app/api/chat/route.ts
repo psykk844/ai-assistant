@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { assertApiSession } from "@/lib/auth/api-session";
 import { resolveSessionUserId } from "@/lib/auth/session-user";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { chatWithContext, embedText } from "@/lib/ai/oars";
+import { chatWithContext, embedText } from "@/lib/ai/quatarly";
 import { searchPoints } from "@/lib/qdrant/client";
 
 export async function POST(request: Request) {

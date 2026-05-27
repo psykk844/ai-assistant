@@ -58,7 +58,7 @@ describe("processLinkBatch", () => {
     process.env.APIFY_REDDIT_ACTOR = "apify/reddit-scraper";
     process.env.APIFY_X_ACTOR = "apify/x-scraper";
     process.env.APIFY_FACEBOOK_ACTOR = "apify/facebook-scraper";
-    process.env.OARS_API_KEY = "test-oars-key";
+    process.env.QUATARLY_API_KEY = "test-quatarly-key";
     state.items = [];
     state.processed = new Map();
     state.selectedColumns = "";
@@ -224,13 +224,13 @@ describe("processLinkBatch", () => {
     expect(state.deletes).toEqual(["item-1"]);
   });
 
-  it("archives standalone generic web links with a fallback brief when OARS still times out after retries", async () => {
+  it("archives standalone generic web links with a fallback brief when Quatarly still times out after retries", async () => {
     state.items = [linkItem({
       content: "https://nathanburkeconsulting.com/2017/03/05/coaching-girls-it-is-different/",
       title: "https://nathanburkeconsulting.com/2017/03/05/coaching-girls-it-is-different/",
       type: "todo",
     })];
-    const retryable = Object.assign(new Error("OARS summary request timed out"), { retryable: true });
+    const retryable = Object.assign(new Error("Quatarly summary request timed out"), { retryable: true });
     mocks.extractGenericWebLink.mockResolvedValue({
       platform: "web",
       originalUrl: "https://nathanburkeconsulting.com/2017/03/05/coaching-girls-it-is-different/",
@@ -374,9 +374,9 @@ describe("processLinkBatch", () => {
     expect(state.deletes).toEqual([]);
   });
 
-  it("archives the link with a fallback brief when OARS summarization remains unavailable after retries", async () => {
+  it("archives the link with a fallback brief when Quatarly summarization remains unavailable after retries", async () => {
     state.items = [linkItem({ content: "https://facebook.com/share/p/temporary" })];
-    const retryable = Object.assign(new Error("OARS summary failed with HTTP 524"), { retryable: true });
+    const retryable = Object.assign(new Error("Quatarly summary failed with HTTP 524"), { retryable: true });
     mocks.extractSocialLinkWithApify.mockResolvedValue({
       ...extractedLink(),
       platform: "facebook",
@@ -398,7 +398,7 @@ describe("processLinkBatch", () => {
         whySaved: "Saved for later review. AI summarization was unavailable, so this note uses extracted source text.",
         fullContext: "Thread text",
         keyPoints: ["Thread text"],
-        notableDetails: ["AI summary fallback: OARS summary failed with HTTP 524"],
+        notableDetails: ["AI summary fallback: Quatarly summary failed with HTTP 524"],
         tags: ["saved-link", "summary-fallback"],
       },
     }));

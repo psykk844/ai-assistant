@@ -20,6 +20,8 @@ type MirrorableItem = {
 const DEFAULT_ROOT = "/shared/obsidian_live_vault";
 
 export async function mirrorItemToObsidian(item: MirrorableItem): Promise<{ obsidianPath: string } | null> {
+  if (item.type === "link") return null;
+
   const root = resolveRoot();
   if (!(await rootReadable(root))) return null;
 

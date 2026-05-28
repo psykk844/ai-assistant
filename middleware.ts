@@ -43,7 +43,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Allow public routes
-  if (pathname === "/login" || pathname.startsWith("/_next") || pathname.startsWith("/api")) {
+  if (pathname === "/login" || pathname === "/sw.js" || pathname.startsWith("/_next") || pathname.startsWith("/api")) {
     return NextResponse.next();
   }
 

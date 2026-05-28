@@ -9,4 +9,10 @@ describe("web auth session", () => {
     expect(source).toContain("max-age=2592000");
     expect(source.toLowerCase()).toContain("samesite=lax");
   });
+
+  it("allows the service worker script to load before login", async () => {
+    const source = await readFile(resolve(process.cwd(), "middleware.ts"), "utf8");
+
+    expect(source).toContain('pathname === "/sw.js"');
+  });
 });

@@ -1,6 +1,6 @@
-const CACHE_NAME = "ai-assistant-v1";
+const CACHE_NAME = "ai-assistant-v2";
 
-const PRECACHE_URLS = ["/app", "/manifest.json"];
+const PRECACHE_URLS = ["/manifest.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -29,11 +29,16 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // Network-first for API calls and server actions
+  // Network-first for API calls, server actions, app navigations, and RSC refreshes.
+  // The web board mutates server state; cached /app or ?_rsc responses can replay
+  // stale item statuses after actions like Complete.
   if (
     url.pathname.startsWith("/api/") ||
     event.request.method !== "GET" ||
-    url.pathname.startsWith("/_next/data/")
+    url.pathname.startsWith("/_next/data/") ||
+    url.searchParams.has("_rsc") ||
+    event.request.mode === "navigate" ||
+    url.pathname.startsWith("/app")
   ) {
     event.respondWith(
       fetch(event.request).catch(() => caches.match(event.request))
@@ -61,20 +66,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Stale-while-revalidate for page navigations
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const fetched = fetch(event.request)
-        .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          return response;
-        })
-        .catch(() => cached || new Response("Offline", { status: 503, statusText: "Offline" }));
-
-      return cached || fetched;
-    })
-  );
+  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
 });
 
 // --- Push Notification Handlers ---

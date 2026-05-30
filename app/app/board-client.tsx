@@ -649,6 +649,12 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                   >
                     ☀️ My Day
                   </a>
+                  <a
+                    href="/projects"
+                    className="rounded-md border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg-muted)]"
+                  >
+                    Projects
+                  </a>
                   <button
                     type="button"
                     onClick={handleVaultSync}

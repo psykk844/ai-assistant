@@ -24,6 +24,7 @@ import { checklistProgress, groupTopLevelTasksByStatus, subtaskProgress } from "
 import { PROJECT_STATUS_ORDER, statusLabel, type ProjectTaskStatus } from "@/lib/projects/status";
 import { positionForProjectDrop, type ProjectDropPlacement } from "./project-drop-position";
 import { createProjectAction, createProjectTaskAction, moveProjectTaskAction } from "./server-actions";
+import { TaskDetailDrawer } from "./task-detail-drawer";
 
 type ProjectsBoardClientProps = {
   initialBoard: ProjectBoard;
@@ -77,6 +78,7 @@ export function ProjectsBoardClient({ initialBoard }: ProjectsBoardClientProps) 
   const [board, setBoard] = useState(initialBoard);
   const [query, setQuery] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -90,10 +92,16 @@ export function ProjectsBoardClient({ initialBoard }: ProjectsBoardClientProps) 
   );
 
   const activeProject = board.activeProject;
+  const activeProjectId = activeProject?.id ?? null;
   const filteredTasks = useMemo(() => filterTasks(board.tasks, query), [board.tasks, query]);
   const grouped = useMemo(() => groupTopLevelTasksByStatus(filteredTasks), [filteredTasks]);
+  const selectedTask = useMemo(
+    () => board.tasks.find((task) => task.id === selectedTaskId) ?? null,
+    [board.tasks, selectedTaskId],
+  );
 
   useEffect(() => setBoard(initialBoard), [initialBoard]);
+  useEffect(() => setSelectedTaskId(null), [activeProjectId]);
 
   function handleDragEnd(event: DragEndEvent) {
     const activeId = String(event.active.id ?? "");
@@ -270,6 +278,7 @@ export function ProjectsBoardClient({ initialBoard }: ProjectsBoardClientProps) 
                     tasks={grouped[status]}
                     projectId={activeProject.id}
                     pending={isPending}
+                    onOpenTask={setSelectedTaskId}
                   />
                 ))}
               </div>
@@ -281,6 +290,11 @@ export function ProjectsBoardClient({ initialBoard }: ProjectsBoardClientProps) 
           </section>
         </div>
       </DndContext>
+      <TaskDetailDrawer
+        task={selectedTask}
+        projectId={activeProject?.id ?? ""}
+        onClose={() => setSelectedTaskId(null)}
+      />
     </main>
   );
 }
@@ -290,6 +304,7 @@ type ProjectStatusColumnProps = {
   tasks: ProjectTaskNode[];
   projectId: string;
   pending: boolean;
+  onOpenTask: (taskId: string) => void;
 };
 
 const ProjectStatusColumn = memo(function ProjectStatusColumn({
@@ -297,6 +312,7 @@ const ProjectStatusColumn = memo(function ProjectStatusColumn({
   tasks,
   projectId,
   pending,
+  onOpenTask,
 }: ProjectStatusColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `status:${status}` });
   const tone = statusTone(status);
@@ -324,7 +340,7 @@ const ProjectStatusColumn = memo(function ProjectStatusColumn({
         ) : (
           <ul className="space-y-3">
             {tasks.map((task) => (
-              <ProjectTaskCard key={task.id} task={task} pending={pending} />
+              <ProjectTaskCard key={task.id} task={task} pending={pending} onOpenTask={onOpenTask} />
             ))}
           </ul>
         )}
@@ -354,9 +370,10 @@ const ProjectStatusColumn = memo(function ProjectStatusColumn({
 type ProjectTaskCardProps = {
   task: ProjectTaskNode;
   pending: boolean;
+  onOpenTask: (taskId: string) => void;
 };
 
-const ProjectTaskCard = memo(function ProjectTaskCard({ task, pending }: ProjectTaskCardProps) {
+const ProjectTaskCard = memo(function ProjectTaskCard({ task, pending, onOpenTask }: ProjectTaskCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const checklist = checklistProgress(task.checklist);
   const subtasks = subtaskProgress(task);
@@ -371,12 +388,16 @@ const ProjectTaskCard = memo(function ProjectTaskCard({ task, pending }: Project
     <li
       ref={setNodeRef}
       style={style}
+      onClick={() => {
+        if (!isDragging) onOpenTask(task.id);
+      }}
       className="rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] p-3 shadow-sm"
     >
       <div className="flex items-start gap-2">
         <button
           type="button"
           aria-label={`Drag ${task.title}`}
+          onClick={(event) => event.stopPropagation()}
           className="mt-0.5 rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] cursor-grab hover:border-[var(--accent)] active:cursor-grabbing disabled:opacity-60"
           disabled={pending}
           {...attributes}

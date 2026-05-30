@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ProjectTaskNode } from "../lib/projects/types";
+import type { ProjectTask, ProjectTaskNode } from "../lib/projects/types";
 import { checklistProgress, groupTopLevelTasksByStatus, subtaskProgress } from "../lib/projects/progress";
+import { buildProjectTaskNodes } from "../lib/projects/repository";
 
 function task(overrides: Partial<ProjectTaskNode>): ProjectTaskNode {
   return {
@@ -20,6 +21,11 @@ function task(overrides: Partial<ProjectTaskNode>): ProjectTaskNode {
     subtasks: [],
     ...overrides,
   };
+}
+
+function taskRow(overrides: Partial<ProjectTask>): ProjectTask {
+  const { checklist: _checklist, subtasks: _subtasks, ...row } = task(overrides);
+  return row;
 }
 
 describe("project progress helpers", () => {
@@ -57,5 +63,22 @@ describe("project progress helpers", () => {
     expect(grouped.todo.map((item) => item.id)).toEqual(["b", "a"]);
     expect(grouped.done.map((item) => item.id)).toEqual(["c"]);
     expect(grouped.doing).toEqual([]);
+  });
+
+  it("does not render nested subtasks below one level", () => {
+    const nodes = buildProjectTaskNodes(
+      [
+        taskRow({ id: "parent" }),
+        taskRow({ id: "child", parent_task_id: "parent" }),
+        taskRow({ id: "grandchild", parent_task_id: "child" }),
+      ],
+      [],
+    );
+
+    const grouped = groupTopLevelTasksByStatus(nodes);
+
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].subtasks.map((item) => item.id)).toEqual(["child"]);
+    expect(grouped.todo.map((item) => item.id)).toEqual(["parent"]);
   });
 });

@@ -12,7 +12,11 @@ describe("project kanban migration", () => {
     expect(sql).toContain("CHECK (status IN ('backlog', 'todo', 'doing', 'waiting', 'done'))");
     expect(sql).toContain("FOREIGN KEY (project_id, user_id) REFERENCES public.projects(id, user_id) ON DELETE CASCADE");
     expect(sql).toContain(
-      "FOREIGN KEY (parent_task_id, user_id, project_id) REFERENCES public.project_tasks(id, user_id, project_id) ON DELETE CASCADE",
+      "root_guard UUID GENERATED ALWAYS AS (CASE WHEN parent_task_id IS NULL THEN id ELSE NULL END) STORED",
+    );
+    expect(sql).toContain("UNIQUE (root_guard, user_id, project_id)");
+    expect(sql).toContain(
+      "FOREIGN KEY (parent_task_id, user_id, project_id) REFERENCES public.project_tasks(root_guard, user_id, project_id) ON DELETE CASCADE",
     );
     expect(sql).toContain("FOREIGN KEY (task_id, user_id) REFERENCES public.project_tasks(id, user_id) ON DELETE CASCADE");
     expect(sql).toContain("CHECK (jsonb_typeof(labels) = 'array')");

@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS public.project_tasks (
   user_id UUID NOT NULL,
   project_id UUID NOT NULL,
   parent_task_id UUID,
+  root_guard UUID GENERATED ALWAYS AS (CASE WHEN parent_task_id IS NULL THEN id ELSE NULL END) STORED,
   title TEXT NOT NULL CHECK (length(trim(title)) > 0),
   description TEXT,
   status TEXT NOT NULL DEFAULT 'backlog' CHECK (status IN ('backlog', 'todo', 'doing', 'waiting', 'done')),
@@ -26,8 +27,9 @@ CREATE TABLE IF NOT EXISTS public.project_tasks (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (id, user_id),
   UNIQUE (id, user_id, project_id),
+  UNIQUE (root_guard, user_id, project_id),
   FOREIGN KEY (project_id, user_id) REFERENCES public.projects(id, user_id) ON DELETE CASCADE,
-  FOREIGN KEY (parent_task_id, user_id, project_id) REFERENCES public.project_tasks(id, user_id, project_id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_task_id, user_id, project_id) REFERENCES public.project_tasks(root_guard, user_id, project_id) ON DELETE CASCADE,
   CHECK (parent_task_id IS NULL OR parent_task_id <> id)
 );
 

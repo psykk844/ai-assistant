@@ -21,7 +21,7 @@ test("projects kanban web flow stays isolated from inbox todos", async ({ page }
   await page.waitForURL("**/app", { timeout: 20_000 });
 
   await page.goto(new URL("/projects", baseUrl).toString(), { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { name: "Projects" }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Kanban" }).first()).toBeVisible();
 
   await page.getByPlaceholder("Project name").fill(projectName);
   await page.getByPlaceholder("Optional description").fill("Created by Projects web smoke");

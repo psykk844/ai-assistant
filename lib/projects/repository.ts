@@ -164,9 +164,12 @@ export async function createProjectTask(
   const board = await loadProjectBoard(userId, input.projectId);
   if (board.activeProject?.id !== input.projectId) throw new Error("Project not found");
 
-  const siblingPositions = input.parentTaskId
-    ? board.tasks.find((task) => task.id === input.parentTaskId)?.subtasks ?? []
-    : board.tasks.filter((task) => task.status === status);
+  const parentTask = input.parentTaskId ? board.tasks.find((task) => task.id === input.parentTaskId) : null;
+  if (input.parentTaskId && (!parentTask || parentTask.parent_task_id !== null || parentTask.archived_at)) {
+    throw new Error("Parent task not found");
+  }
+
+  const siblingPositions = parentTask ? parentTask.subtasks : board.tasks.filter((task) => task.status === status);
 
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -200,7 +203,11 @@ export type ProjectTaskPatch = Partial<{
 
 export async function updateProjectTask(userId: string, taskId: string, patch: ProjectTaskPatch) {
   const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (typeof patch.title === "string") payload.title = patch.title.trim();
+  if (typeof patch.title === "string") {
+    const title = patch.title.trim();
+    if (!title) throw new Error("Task title is required");
+    payload.title = title;
+  }
   if ("description" in patch) payload.description = patch.description?.trim() || null;
   if (patch.status) {
     if (!isProjectTaskStatus(patch.status)) throw new Error("Invalid project task status");
@@ -258,7 +265,11 @@ export async function updateChecklistItem(
   patch: Partial<Pick<ProjectChecklistItem, "title" | "completed" | "position">>,
 ) {
   const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (typeof patch.title === "string") payload.title = patch.title.trim();
+  if (typeof patch.title === "string") {
+    const title = patch.title.trim();
+    if (!title) throw new Error("Checklist title is required");
+    payload.title = title;
+  }
   if (typeof patch.completed === "boolean") payload.completed = patch.completed;
   if (typeof patch.position === "number") payload.position = patch.position;
 

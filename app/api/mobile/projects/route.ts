@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createProject, loadProjectBoard } from "@/lib/projects/repository";
 import { mobileCorsPreflightResponse, requireMobileApiUser, unauthorizedResponse, withMobileCors } from "../_shared";
+import { expectedProjectErrorResponse, mobileJsonError, routeProjectMissing } from "./_helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +14,15 @@ export async function GET(request: Request) {
   if (!auth) return unauthorizedResponse(request);
 
   const projectId = new URL(request.url).searchParams.get("project");
-  const board = await loadProjectBoard(auth.userId, projectId);
-  return withMobileCors(NextResponse.json(board), request);
+  try {
+    const board = await loadProjectBoard(auth.userId, projectId);
+    if (projectId && routeProjectMissing(board, projectId)) {
+      return mobileJsonError(request, 404, "not found");
+    }
+    return withMobileCors(NextResponse.json(board), request);
+  } catch (error) {
+    return expectedProjectErrorResponse(error, request);
+  }
 }
 
 export async function POST(request: Request) {
@@ -22,10 +30,13 @@ export async function POST(request: Request) {
   if (!auth) return unauthorizedResponse(request);
 
   const body = (await request.json().catch(() => null)) as { name?: string; description?: string | null } | null;
-  const project = await createProject(auth.userId, {
-    name: body?.name ?? "",
-    description: body?.description ?? null,
-  });
-
-  return withMobileCors(NextResponse.json(project), request);
+  try {
+    const project = await createProject(auth.userId, {
+      name: body?.name ?? "",
+      description: body?.description ?? null,
+    });
+    return withMobileCors(NextResponse.json(project), request);
+  } catch (error) {
+    return expectedProjectErrorResponse(error, request);
+  }
 }

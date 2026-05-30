@@ -98,6 +98,6 @@ export async function getMobileProjectBoard(projectId?: string | null): Promise<
     return buildMockProjectBoard();
   }
 
-  const suffix = projectId ? `?project=${encodeURIComponent(projectId)}` : "";
-  return requestProjectsApi<MobileProjectBoardPayload>(`/api/mobile/projects${suffix}`);
+  const path = projectId ? `/api/mobile/projects/${encodeURIComponent(projectId)}/board` : "/api/mobile/projects";
+  return requestProjectsApi<MobileProjectBoardPayload>(path);
 }

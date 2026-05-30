@@ -162,7 +162,7 @@ export async function createProjectTask(
   if (!isProjectTaskStatus(status)) throw new Error("Invalid project task status");
 
   const board = await loadProjectBoard(userId, input.projectId);
-  if (!board.activeProject) throw new Error("Project not found");
+  if (board.activeProject?.id !== input.projectId) throw new Error("Project not found");
 
   const siblingPositions = input.parentTaskId
     ? board.tasks.find((task) => task.id === input.parentTaskId)?.subtasks ?? []

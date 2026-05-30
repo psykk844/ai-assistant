@@ -1,6 +1,78 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ProjectChecklistItem, ProjectTask } from "../lib/projects/types";
-import { buildProjectTaskNodes, nextProjectPosition, nextTaskPosition, sanitizeProjectLabels } from "../lib/projects/repository";
+import { buildProjectTaskNodes, createProjectTask, nextProjectPosition, nextTaskPosition, sanitizeProjectLabels } from "../lib/projects/repository";
+
+const insertProjectTask = vi.fn();
+
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({
+    from(table: string) {
+      const query = {
+        select() {
+          return query;
+        },
+        eq() {
+          return query;
+        },
+        is() {
+          return query;
+        },
+        order() {
+          return query;
+        },
+        in() {
+          return query;
+        },
+        insert(payload: unknown) {
+          if (table === "project_tasks") insertProjectTask(payload);
+          return query;
+        },
+        single() {
+          return Promise.resolve({
+            data: {
+              id: "task-created",
+              project_id: "missing-project",
+              parent_task_id: null,
+              title: "Task",
+              description: null,
+              status: "backlog",
+              position: 1000,
+              due_date: null,
+              labels: [],
+              archived_at: null,
+              created_at: "2026-05-30T00:00:00Z",
+              updated_at: "2026-05-30T00:00:00Z",
+            },
+            error: null,
+          });
+        },
+        then(resolve: (value: unknown) => void) {
+          if (table === "projects") {
+            resolve({
+              data: [
+                {
+                  id: "other-project",
+                  user_id: "user-1",
+                  name: "Other",
+                  description: null,
+                  position: 1000,
+                  archived_at: null,
+                  created_at: "2026-05-30T00:00:00Z",
+                  updated_at: "2026-05-30T00:00:00Z",
+                },
+              ],
+              error: null,
+            });
+            return;
+          }
+
+          resolve({ data: [], error: null });
+        },
+      };
+      return query;
+    },
+  }),
+}));
 
 describe("project repository helpers", () => {
   it("sanitizes labels to compact name/color objects", () => {
@@ -47,5 +119,18 @@ describe("project repository helpers", () => {
         subtasks: [{ id: "sub-1", checklist: [{ id: "check-2" }] }],
       },
     ]);
+  });
+
+  it("rejects a missing requested project even when another project exists", async () => {
+    insertProjectTask.mockClear();
+
+    await expect(
+      createProjectTask("user-1", {
+        projectId: "missing-project",
+        title: "Task",
+      }),
+    ).rejects.toThrow("Project not found");
+
+    expect(insertProjectTask).not.toHaveBeenCalled();
   });
 });

@@ -18,7 +18,13 @@ export function subtaskProgress(task: ProjectTaskNode): ProgressCount {
 }
 
 export function groupTopLevelTasksByStatus(tasks: ProjectTaskNode[]) {
-  const grouped = Object.fromEntries(PROJECT_STATUS_ORDER.map((status) => [status, []])) as Record<ProjectTaskStatus, ProjectTaskNode[]>;
+  const grouped: Record<ProjectTaskStatus, ProjectTaskNode[]> = {
+    backlog: [],
+    todo: [],
+    doing: [],
+    waiting: [],
+    done: [],
+  };
 
   for (const task of tasks) {
     if (task.parent_task_id) continue;

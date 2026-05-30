@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition, type FormEvent } from "react";
+import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { ProjectTaskNode } from "@/lib/projects/types";
 import { PROJECT_STATUS_ORDER, statusLabel, type ProjectTaskStatus } from "@/lib/projects/status";
@@ -28,15 +28,38 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
   const [checklistTitle, setChecklistTitle] = useState("");
   const [subtaskTitle, setSubtaskTitle] = useState("");
   const [mutationMessage, setMutationMessage] = useState<{ tone: "error" | "info"; text: string } | null>(null);
+  const [checklistOverrides, setChecklistOverrides] = useState<Record<string, boolean>>({});
+  const previousTaskId = useRef<string | null>(null);
 
   useEffect(() => {
+    const nextTaskId = task?.id ?? null;
+    const taskChanged = previousTaskId.current !== nextTaskId;
+    previousTaskId.current = nextTaskId;
+
     setTitle(task?.title ?? "");
     setDescription(task?.description ?? "");
     setStatus(task?.status ?? "todo");
     setDueDate(task?.due_date ?? "");
     setChecklistTitle("");
     setSubtaskTitle("");
-    setMutationMessage(null);
+    if (taskChanged) setMutationMessage(null);
+    setChecklistOverrides((current) => {
+      if (taskChanged || !task) return {};
+
+      const checklistById = new Map(task.checklist.map((item) => [item.id, item.completed]));
+      const next = { ...current };
+      let changed = false;
+
+      for (const [id, completed] of Object.entries(current)) {
+        const savedValue = checklistById.get(id);
+        if (savedValue === undefined || savedValue === completed) {
+          delete next[id];
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
   }, [task]);
 
   if (!task) return null;
@@ -214,24 +237,32 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
               No checklist items.
             </p>
           ) : (
-            currentTask.checklist.map((item) => (
-              <label
-                key={item.id}
-                className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  checked={item.completed}
-                  onChange={(event) =>
-                    runMutation(() => updateProjectChecklistItemAction(item.id, { completed: event.target.checked }), {
-                      failureMessage: "Could not update checklist item. Please try again.",
-                    })
-                  }
-                  disabled={isPending}
-                />
-                <span className={item.completed ? "text-[var(--text-muted)] line-through" : ""}>{item.title}</span>
-              </label>
-            ))
+            currentTask.checklist.map((item) => {
+              const checked = checklistOverrides[item.id] ?? item.completed;
+
+              return (
+                <label
+                  key={item.id}
+                  className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(event) => {
+                      const nextCompleted = event.target.checked;
+                      setChecklistOverrides((current) => ({ ...current, [item.id]: nextCompleted }));
+                      runMutation(() => updateProjectChecklistItemAction(item.id, { completed: nextCompleted }), {
+                        onFailure: () =>
+                          setChecklistOverrides((current) => ({ ...current, [item.id]: item.completed })),
+                        failureMessage: "Could not update checklist item. Please try again.",
+                      });
+                    }}
+                    disabled={isPending}
+                  />
+                  <span className={checked ? "text-[var(--text-muted)] line-through" : ""}>{item.title}</span>
+                </label>
+              );
+            })
           )}
         </div>
 

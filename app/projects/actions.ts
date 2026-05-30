@@ -1,4 +1,5 @@
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { resolveSessionUserId } from "@/lib/auth/session-user";
 import {
   createChecklistItem,
@@ -27,11 +28,12 @@ export function projectTaskMovePatchFromForm(formData: FormData) {
 
 export async function createProjectAction(formData: FormData) {
   const userId = await resolveSessionUserId();
-  await createProject(userId, {
+  const project = await createProject(userId, {
     name: String(formData.get("name") ?? ""),
     description: String(formData.get("description") ?? ""),
   });
   revalidatePath("/projects");
+  redirect(`/projects?project=${encodeURIComponent(project.id)}`);
 }
 
 export async function createProjectTaskAction(formData: FormData) {

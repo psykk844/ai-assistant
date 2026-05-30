@@ -1,4 +1,4 @@
-import type { MobileProjectBoardPayload, MobileProjectTaskStatus } from "./projects-types";
+import type { MobileProjectBoardPayload, MobileProjectSubtask, MobileProjectTask, MobileProjectTaskStatus } from "./projects-types";
 
 type ProjectStatusTab = { key: MobileProjectTaskStatus; label: string };
 
@@ -43,7 +43,7 @@ export async function requestProjectsApi<T>(path: string, init: RequestInit = {}
   return (await response.json()) as T;
 }
 
-export async function buildMockProjectBoard(): Promise<MobileProjectBoardPayload> {
+function createInitialMockProjectBoard(): MobileProjectBoardPayload {
   const activeProject = {
     id: "project-mobile-demo",
     name: "Mobile Project",
@@ -93,11 +93,157 @@ export async function buildMockProjectBoard(): Promise<MobileProjectBoardPayload
   };
 }
 
+let mockProjectBoard = createInitialMockProjectBoard();
+let mockTaskSequence = 1;
+
+function cloneMockBoard(board: MobileProjectBoardPayload): MobileProjectBoardPayload {
+  return {
+    projects: board.projects.map((project) => ({ ...project })),
+    activeProject: board.activeProject ? { ...board.activeProject } : null,
+    tasks: board.tasks.map((task) => ({
+      ...task,
+      labels: task.labels.map((label) => ({ ...label })),
+      checklist: task.checklist.map((item) => ({ ...item })),
+      subtasks: task.subtasks.map((subtask) => ({
+        ...subtask,
+        labels: subtask.labels.map((label) => ({ ...label })),
+        checklist: subtask.checklist.map((item) => ({ ...item })),
+      })),
+    })),
+  };
+}
+
+function updateMockTask(
+  taskId: string,
+  updater: (task: MobileProjectTask | MobileProjectSubtask) => MobileProjectTask | MobileProjectSubtask,
+) {
+  let updatedTask: MobileProjectTask | MobileProjectSubtask | null = null;
+  mockProjectBoard = {
+    ...mockProjectBoard,
+    tasks: mockProjectBoard.tasks.map((task) => {
+      if (task.id === taskId) {
+        updatedTask = updater(task);
+        return updatedTask as MobileProjectTask;
+      }
+
+      const subtasks = task.subtasks.map((subtask) => {
+        if (subtask.id !== taskId) return subtask;
+        updatedTask = updater(subtask);
+        return updatedTask as MobileProjectSubtask;
+      });
+      return { ...task, subtasks };
+    }),
+  };
+  return updatedTask;
+}
+
+export function resetMockProjectBoard() {
+  mockProjectBoard = createInitialMockProjectBoard();
+  mockTaskSequence = 1;
+}
+
+export async function buildMockProjectBoard(): Promise<MobileProjectBoardPayload> {
+  return cloneMockBoard(createInitialMockProjectBoard());
+}
+
 export async function getMobileProjectBoard(projectId?: string | null): Promise<MobileProjectBoardPayload> {
   if (!canUseBackendApi()) {
-    return buildMockProjectBoard();
+    const requestedProject = projectId
+      ? mockProjectBoard.projects.find((project) => project.id === projectId) ?? mockProjectBoard.activeProject
+      : mockProjectBoard.activeProject;
+    return cloneMockBoard({
+      ...mockProjectBoard,
+      activeProject: requestedProject,
+    });
   }
 
   const path = projectId ? `/api/mobile/projects/${encodeURIComponent(projectId)}/board` : "/api/mobile/projects";
   return requestProjectsApi<MobileProjectBoardPayload>(path);
+}
+
+export function buildProjectTaskStatusPatch(status: MobileProjectTaskStatus) {
+  return { status };
+}
+
+export async function createMobileProjectTask(projectId: string, title: string, status: MobileProjectTaskStatus) {
+  const cleanTitle = title.trim();
+  if (canUseBackendApi()) {
+    const task = await requestProjectsApi<MobileProjectTask>(`/api/mobile/projects/${encodeURIComponent(projectId)}/tasks`, {
+      method: "POST",
+      body: JSON.stringify({ title: cleanTitle, status }),
+    });
+    return { ...task, checklist: task.checklist ?? [], subtasks: task.subtasks ?? [] };
+  }
+
+  const task: MobileProjectTask = {
+    id: `mock-${Date.now()}-${mockTaskSequence++}`,
+    project_id: projectId,
+    parent_task_id: null,
+    title: cleanTitle,
+    description: null,
+    status,
+    position: Math.max(0, ...mockProjectBoard.tasks.map((candidate) => candidate.position)) + 1000,
+    due_date: null,
+    labels: [],
+    checklist: [],
+    subtasks: [],
+  };
+  mockProjectBoard = { ...mockProjectBoard, tasks: [task, ...mockProjectBoard.tasks] };
+  return cloneMockBoard({ ...mockProjectBoard, tasks: [task] }).tasks[0];
+}
+
+export async function updateMobileProjectTask(projectId: string, taskId: string, patch: Record<string, unknown>) {
+  if (canUseBackendApi()) {
+    return requestProjectsApi(
+      `/api/mobile/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      },
+    );
+  }
+
+  const updated = updateMockTask(taskId, (task) => ({
+    ...task,
+    title: typeof patch.title === "string" ? patch.title.trim() : task.title,
+    description: "description" in patch ? (typeof patch.description === "string" ? patch.description.trim() || null : null) : task.description,
+    status: typeof patch.status === "string" ? (patch.status as MobileProjectTaskStatus) : task.status,
+    due_date: "due_date" in patch ? (typeof patch.due_date === "string" ? patch.due_date : null) : task.due_date,
+    labels: Array.isArray(patch.labels) ? task.labels : task.labels,
+  }));
+
+  return updated ? { ok: true } : { ok: false };
+}
+
+export async function updateMobileProjectChecklistItem(
+  projectId: string,
+  taskId: string,
+  itemId: string,
+  patch: Record<string, unknown>,
+) {
+  if (canUseBackendApi()) {
+    return requestProjectsApi(
+      `/api/mobile/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/checklist`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ itemId, ...patch }),
+      },
+    );
+  }
+
+  const updated = updateMockTask(taskId, (task) => ({
+    ...task,
+    checklist: task.checklist.map((item) =>
+      item.id === itemId
+        ? {
+            ...item,
+            title: typeof patch.title === "string" ? patch.title.trim() : item.title,
+            completed: typeof patch.completed === "boolean" ? patch.completed : item.completed,
+            position: typeof patch.position === "number" ? patch.position : item.position,
+          }
+        : item,
+    ),
+  }));
+
+  return updated ? { ok: true } : { ok: false };
 }

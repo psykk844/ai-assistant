@@ -15,7 +15,9 @@ export default function RootLayout() {
       >
         <Tabs.Screen name="(tabs)/home" options={{ title: "Home" }} />
         <Tabs.Screen name="(tabs)/backlog" options={{ title: "Backlog" }} />
+        <Tabs.Screen name="(tabs)/projects" options={{ title: "Projects" }} />
         <Tabs.Screen name="item/[id]" options={{ href: null, title: "Item Detail" }} />
+        <Tabs.Screen name="project-task/[id]" options={{ href: null, title: "Project Task" }} />
       </Tabs>
     </SafeAreaProvider>
   );

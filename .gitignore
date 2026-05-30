@@ -39,6 +39,7 @@ yarn-error.log*
 .runtime-logs/
 .expo/
 .worktrees/
+.superpowers/
 
 # env files (can opt-in for committing if needed)
 .env*

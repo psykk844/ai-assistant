@@ -7,6 +7,7 @@ import {
   getMobileProjectBoard,
   projectAreaTabs,
   projectStatusTabs,
+  updateMobileProjectArchive,
   updateMobileProjectTask,
 } from "../../lib/projects-api";
 import type {
@@ -19,6 +20,7 @@ import type {
 export default function ProjectsScreen() {
   const [board, setBoard] = useState<MobileProjectBoardPayload | null>(null);
   const [selectedArea, setSelectedArea] = useState<MobileProjectArea>("demand");
+  const [selectedArchived, setSelectedArchived] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<MobileProjectTaskStatus>("todo");
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -36,7 +38,7 @@ export default function ProjectsScreen() {
       setLoading(true);
       setError(null);
       try {
-        const payload = await getMobileProjectBoard(selectedProjectId, selectedArea);
+        const payload = await getMobileProjectBoard(selectedProjectId, selectedArea, selectedArchived);
         if (!active) return;
         setBoard(payload);
         setSelectedProjectId(payload.activeProject?.id ?? payload.projects[0]?.id ?? null);
@@ -51,7 +53,7 @@ export default function ProjectsScreen() {
     return () => {
       active = false;
     };
-  }, [selectedArea, selectedProjectId]);
+  }, [selectedArea, selectedArchived, selectedProjectId]);
 
   const visibleTasks = useMemo(() => {
     if (!board) return [];
@@ -65,6 +67,27 @@ export default function ProjectsScreen() {
   function handleAreaSelect(area: MobileProjectArea) {
     setSelectedArea(area);
     setSelectedProjectId(null);
+  }
+
+  function handleArchiveModeSelect(archived: boolean) {
+    setSelectedArchived(archived);
+    setSelectedProjectId(null);
+  }
+
+  async function handleArchiveProject(archived: boolean) {
+    if (!board?.activeProject || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await updateMobileProjectArchive(board.activeProject.id, archived);
+      const payload = await getMobileProjectBoard(null, selectedArea, selectedArchived);
+      setBoard(payload);
+      setSelectedProjectId(payload.activeProject?.id ?? payload.projects[0]?.id ?? null);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Failed to update project.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleStatusChange(taskId: string, nextStatus: MobileProjectTaskStatus) {
@@ -177,45 +200,82 @@ export default function ProjectsScreen() {
                 )}
               </ScrollView>
 
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
-                {projectStatusTabs().map((status) => (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={status.key}
-                    onPress={() => setSelectedStatus(status.key)}
-                    style={[styles.statusTab, selectedStatus === status.key && styles.activeStatusTab]}
-                  >
-                    <Text style={[styles.statusTabText, selectedStatus === status.key && styles.activeStatusTabText]}>
-                      {status.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-
-              <View style={styles.addRow}>
-                <TextInput
-                  accessibilityLabel="New project task title"
-                  value={newTaskTitle}
-                  onChangeText={setNewTaskTitle}
-                  onSubmitEditing={handleAddTask}
-                  placeholder={`Add to ${selectedStatus}`}
-                  placeholderTextColor="#94a3b8"
-                  style={styles.input}
-                />
+              <View style={styles.modeRow}>
                 <Pressable
                   accessibilityRole="button"
-                  disabled={saving || !newTaskTitle.trim()}
-                  onPress={handleAddTask}
-                  style={[styles.addButton, (saving || !newTaskTitle.trim()) && styles.disabledButton]}
+                  onPress={() => handleArchiveModeSelect(false)}
+                  style={[styles.modeChip, !selectedArchived && styles.activeModeChip]}
                 >
-                  <Text style={styles.addButtonText}>{saving ? "Adding" : "Add"}</Text>
+                  <Text style={[styles.modeChipText, !selectedArchived && styles.activeModeChipText]}>Active</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => handleArchiveModeSelect(true)}
+                  style={[styles.modeChip, selectedArchived && styles.activeModeChip]}
+                >
+                  <Text style={[styles.modeChipText, selectedArchived && styles.activeModeChipText]}>Archived</Text>
                 </Pressable>
               </View>
 
+              {board.activeProject ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={saving}
+                  onPress={() => handleArchiveProject(!selectedArchived)}
+                  style={[styles.archiveButton, saving && styles.disabledButton]}
+                >
+                  <Text style={styles.archiveButtonText}>
+                    {selectedArchived ? "Restore project" : "Archive project"}
+                  </Text>
+                </Pressable>
+              ) : null}
+
+              {!selectedArchived ? (
+                <>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
+                    {projectStatusTabs().map((status) => (
+                      <Pressable
+                        accessibilityRole="button"
+                        key={status.key}
+                        onPress={() => setSelectedStatus(status.key)}
+                        style={[styles.statusTab, selectedStatus === status.key && styles.activeStatusTab]}
+                      >
+                        <Text style={[styles.statusTabText, selectedStatus === status.key && styles.activeStatusTabText]}>
+                          {status.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+
+                  <View style={styles.addRow}>
+                    <TextInput
+                      accessibilityLabel="New project task title"
+                      value={newTaskTitle}
+                      onChangeText={setNewTaskTitle}
+                      onSubmitEditing={handleAddTask}
+                      placeholder={`Add to ${selectedStatus}`}
+                      placeholderTextColor="#94a3b8"
+                      style={styles.input}
+                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={saving || !newTaskTitle.trim()}
+                      onPress={handleAddTask}
+                      style={[styles.addButton, (saving || !newTaskTitle.trim()) && styles.disabledButton]}
+                    >
+                      <Text style={styles.addButtonText}>{saving ? "Adding" : "Add"}</Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : (
+                <Text style={styles.muted}>Archived projects stay here until you restore them.</Text>
+              )}
+
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-              <View style={styles.listWrap}>
-                {visibleTasks.length ? (
+              {!selectedArchived ? (
+                <View style={styles.listWrap}>
+                  {visibleTasks.length ? (
                   visibleTasks.map((task) => (
                     <ProjectTaskRow
                       key={task.id}
@@ -227,7 +287,8 @@ export default function ProjectsScreen() {
                 ) : (
                   <Text style={styles.muted}>No tasks in this status.</Text>
                 )}
-              </View>
+                </View>
+              ) : null}
             </>
           ) : (
             <Text style={styles.muted}>No project board found.</Text>
@@ -284,6 +345,32 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
     paddingRight: 20,
+  },
+  modeRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  modeChip: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    alignItems: "center",
+  },
+  activeModeChip: {
+    borderColor: "#4f46e5",
+    backgroundColor: "#eef2ff",
+  },
+  modeChipText: {
+    color: "#475569",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  activeModeChipText: {
+    color: "#3730a3",
   },
   projectChip: {
     borderRadius: 999,
@@ -371,6 +458,20 @@ const styles = StyleSheet.create({
   },
   addButtonText: {
     color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  archiveButton: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  archiveButtonText: {
+    color: "#334155",
     fontSize: 14,
     fontWeight: "800",
   },

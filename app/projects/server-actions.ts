@@ -6,6 +6,7 @@ import {
   createProjectChecklistItemAction as createProjectChecklistItemActionImpl,
   createProjectTaskAction as createProjectTaskActionImpl,
   moveProjectTaskAction as moveProjectTaskActionImpl,
+  updateProjectArchiveAction as updateProjectArchiveActionImpl,
   updateProjectChecklistItemAction as updateProjectChecklistItemActionImpl,
   updateProjectTaskAction as updateProjectTaskActionImpl,
 } from "./actions";
@@ -21,6 +22,10 @@ export async function createProjectTaskAction(formData: FormData) {
 
 export async function moveProjectTaskAction(formData: FormData) {
   return moveProjectTaskActionImpl(formData);
+}
+
+export async function updateProjectArchiveAction(formData: FormData) {
+  return updateProjectArchiveActionImpl(formData);
 }
 
 export async function updateProjectTaskAction(

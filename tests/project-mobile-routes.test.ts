@@ -30,6 +30,17 @@ function seedProjectData() {
       created_at: "2026-05-30T00:00:00Z",
       updated_at: "2026-05-30T00:00:00Z",
     },
+    {
+      id: "project-3",
+      user_id: "user-1",
+      area: "delivery",
+      name: "Archived Delivery Project",
+      description: null,
+      position: 3000,
+      archived_at: "2026-05-31T00:00:00Z",
+      created_at: "2026-05-30T00:00:00Z",
+      updated_at: "2026-05-30T00:00:00Z",
+    },
   ];
   db.tasks = [
     {
@@ -105,7 +116,7 @@ function seedProjectData() {
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from(table: string) {
-      const filters: Array<{ column: string; value: unknown; op: "eq" | "is" | "in" }> = [];
+      const filters: Array<{ column: string; value: unknown; op: "eq" | "is" | "not-is" | "in" }> = [];
       let insertPayload: Record<string, unknown> | null = null;
       let updatePayload: Record<string, unknown> | null = null;
 
@@ -120,6 +131,7 @@ vi.mock("@/lib/supabase/admin", () => ({
         return rows.filter((row) =>
           filters.every((filter) => {
             if (filter.op === "is") return row[filter.column] === filter.value;
+            if (filter.op === "not-is") return row[filter.column] !== filter.value;
             if (filter.op === "in") return Array.isArray(filter.value) && filter.value.includes(row[filter.column]);
             return row[filter.column] === filter.value;
           }),
@@ -140,6 +152,10 @@ vi.mock("@/lib/supabase/admin", () => ({
         },
         in(column: string, value: unknown[]) {
           filters.push({ column, value, op: "in" });
+          return query;
+        },
+        not(column: string, operator: string, value: unknown) {
+          filters.push({ column, value, op: operator === "is" ? "not-is" : "eq" });
           return query;
         },
         order() {
@@ -218,6 +234,48 @@ describe("mobile project routes", () => {
     expect(body.projects.map((project: { name: string }) => project.name)).toEqual(["Second Project"]);
     expect(body.activeProject.name).toBe("Second Project");
     expect(body.tasks.map((task: { title: string }) => task.title)).toEqual(["Other project task"]);
+  });
+
+  it("returns archived mobile projects separately by area", async () => {
+    const { GET } = await import("../app/api/mobile/projects/route");
+    const response = await GET(
+      new Request("http://localhost/api/mobile/projects?area=delivery&archived=1", {
+        headers: { "x-mobile-dev-key": "test-mobile-key" },
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.projects.map((project: { name: string }) => project.name)).toEqual(["Archived Delivery Project"]);
+    expect(body.activeProject.name).toBe("Archived Delivery Project");
+    expect(body.tasks).toEqual([]);
+  });
+
+  it("archives and restores projects from the mobile route", async () => {
+    const { PATCH } = await import("../app/api/mobile/projects/route");
+
+    const archiveResponse = await PATCH(
+      new Request("http://localhost/api/mobile/projects", {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "x-mobile-dev-key": "test-mobile-key" },
+        body: JSON.stringify({ projectId: "project-2", archived: true }),
+      }),
+    );
+    const archived = await archiveResponse.json();
+
+    const restoreResponse = await PATCH(
+      new Request("http://localhost/api/mobile/projects", {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "x-mobile-dev-key": "test-mobile-key" },
+        body: JSON.stringify({ projectId: "project-3", archived: false }),
+      }),
+    );
+    const restored = await restoreResponse.json();
+
+    expect(archiveResponse.status).toBe(200);
+    expect(archived.archived_at).toEqual(expect.any(String));
+    expect(restoreResponse.status).toBe(200);
+    expect(restored.archived_at).toBeNull();
   });
 
   it("returns unauthorized with CORS headers when mobile auth is missing", async () => {

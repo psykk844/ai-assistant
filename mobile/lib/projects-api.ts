@@ -1,6 +1,7 @@
 import type {
   MobileProjectArea,
   MobileProjectBoardPayload,
+  MobileProject,
   MobileProjectSubtask,
   MobileProjectTask,
   MobileProjectTaskStatus,
@@ -65,6 +66,7 @@ function createInitialMockProjectBoard(): MobileProjectBoardPayload {
     name: "Mobile Project",
     description: "A project board for mobile development",
     position: 1000,
+    archived_at: null,
   };
   const deliveryProject = {
     id: "project-mobile-delivery",
@@ -72,6 +74,7 @@ function createInitialMockProjectBoard(): MobileProjectBoardPayload {
     name: "Delivery Project",
     description: "Operations and service delivery",
     position: 1000,
+    archived_at: null,
   };
   const personalProject = {
     id: "project-mobile-personal",
@@ -79,6 +82,7 @@ function createInitialMockProjectBoard(): MobileProjectBoardPayload {
     name: "Personal Project",
     description: "Personal goals",
     position: 1000,
+    archived_at: null,
   };
 
   return {
@@ -179,9 +183,12 @@ export async function buildMockProjectBoard(): Promise<MobileProjectBoardPayload
 export async function getMobileProjectBoard(
   projectId?: string | null,
   area: MobileProjectArea = "demand",
+  archived = false,
 ): Promise<MobileProjectBoardPayload> {
   if (!canUseBackendApi()) {
-    const projects = mockProjectBoard.projects.filter((project) => (projectId ? true : project.area === area));
+    const projects = mockProjectBoard.projects.filter((project) =>
+      projectId ? true : project.area === area && Boolean(project.archived_at) === archived,
+    );
     const requestedProject = projectId
       ? mockProjectBoard.projects.find((project) => project.id === projectId) ?? projects[0] ?? null
       : projects[0] ?? null;
@@ -196,9 +203,36 @@ export async function getMobileProjectBoard(
   }
 
   const path = projectId
-    ? `/api/mobile/projects/${encodeURIComponent(projectId)}/board`
-    : `/api/mobile/projects?area=${encodeURIComponent(area)}`;
+    ? archived
+      ? `/api/mobile/projects?area=${encodeURIComponent(area)}&archived=1&project=${encodeURIComponent(projectId)}`
+      : `/api/mobile/projects/${encodeURIComponent(projectId)}/board`
+    : `/api/mobile/projects?area=${encodeURIComponent(area)}${archived ? "&archived=1" : ""}`;
   return requestProjectsApi<MobileProjectBoardPayload>(path);
+}
+
+export async function updateMobileProjectArchive(projectId: string, archived: boolean) {
+  if (canUseBackendApi()) {
+    return requestProjectsApi(`/api/mobile/projects`, {
+      method: "PATCH",
+      body: JSON.stringify({ projectId, archived }),
+    });
+  }
+
+  const archivedAt = archived ? new Date().toISOString() : null;
+  const existing = mockProjectBoard.projects.find((project) => project.id === projectId);
+  if (!existing) throw new Error("Project not found");
+
+  const updated: MobileProject = { ...existing, archived_at: archivedAt };
+  mockProjectBoard = {
+    ...mockProjectBoard,
+    projects: mockProjectBoard.projects.map((project) => (project.id === projectId ? updated : project)),
+    activeProject:
+      mockProjectBoard.activeProject?.id === projectId
+        ? { ...mockProjectBoard.activeProject, archived_at: archivedAt }
+        : mockProjectBoard.activeProject,
+  };
+
+  return { ...updated };
 }
 
 export function buildProjectTaskStatusPatch(status: MobileProjectTaskStatus) {

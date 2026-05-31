@@ -6,6 +6,7 @@ import {
   createProject,
   createProjectTask,
   updateChecklistItem,
+  updateProjectArchive,
   updateProjectTask,
 } from "@/lib/projects/repository";
 import { isProjectArea, isProjectTaskStatus, type ProjectArea, type ProjectTaskStatus } from "@/lib/projects/status";
@@ -13,6 +14,17 @@ import { isProjectArea, isProjectTaskStatus, type ProjectArea, type ProjectTaskS
 export function projectAreaFromForm(formData: FormData): ProjectArea {
   const area = String(formData.get("area") ?? "").trim();
   return isProjectArea(area) ? area : "demand";
+}
+
+export function projectArchivePatchFromForm(formData: FormData) {
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (!projectId) throw new Error("Project id is required");
+
+  return {
+    area: projectAreaFromForm(formData),
+    archived: String(formData.get("archived") ?? "true") !== "false",
+    projectId,
+  };
 }
 
 export function projectTaskMovePatchFromForm(formData: FormData) {
@@ -83,6 +95,17 @@ export async function archiveProjectTaskAction(taskId: string) {
   const userId = await resolveSessionUserId();
   await updateProjectTask(userId, taskId, { archived_at: new Date().toISOString() });
   revalidatePath("/projects");
+}
+
+export async function updateProjectArchiveAction(formData: FormData) {
+  const userId = await resolveSessionUserId();
+  const patch = projectArchivePatchFromForm(formData);
+  await updateProjectArchive(userId, patch.projectId, patch.archived);
+  revalidatePath("/projects");
+  if (patch.archived) {
+    redirect(`/projects?area=${encodeURIComponent(patch.area)}`);
+  }
+  redirect(`/projects?area=${encodeURIComponent(patch.area)}&project=${encodeURIComponent(patch.projectId)}`);
 }
 
 export async function createProjectChecklistItemAction(taskId: string, title: string) {

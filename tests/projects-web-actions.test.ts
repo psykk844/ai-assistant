@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectAreaFromForm, projectTaskMovePatchFromForm } from "../app/projects/actions";
+import { projectAreaFromForm, projectArchivePatchFromForm, projectTaskMovePatchFromForm } from "../app/projects/actions";
 import { positionForProjectDrop } from "../app/projects/project-drop-position";
 
 describe("project web actions", () => {
@@ -12,6 +12,30 @@ describe("project web actions", () => {
     expect(projectAreaFromForm(deliveryForm)).toBe("delivery");
     expect(projectAreaFromForm(new FormData())).toBe("demand");
     expect(projectAreaFromForm(invalidForm)).toBe("demand");
+  });
+
+  it("parses project archive forms", () => {
+    const archiveForm = new FormData();
+    archiveForm.set("projectId", "project-1");
+    archiveForm.set("area", "delivery");
+    archiveForm.set("archived", "true");
+
+    const restoreForm = new FormData();
+    restoreForm.set("projectId", "project-1");
+    restoreForm.set("area", "personal");
+    restoreForm.set("archived", "false");
+
+    expect(projectArchivePatchFromForm(archiveForm)).toEqual({
+      area: "delivery",
+      archived: true,
+      projectId: "project-1",
+    });
+    expect(projectArchivePatchFromForm(restoreForm)).toEqual({
+      area: "personal",
+      archived: false,
+      projectId: "project-1",
+    });
+    expect(() => projectArchivePatchFromForm(new FormData())).toThrow("Project id is required");
   });
 
   it("parses a valid drag/drop move form", () => {

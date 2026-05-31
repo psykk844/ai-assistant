@@ -30,10 +30,11 @@ import {
   type ProjectTaskStatus,
 } from "@/lib/projects/status";
 import { positionForProjectDrop, type ProjectDropPlacement } from "./project-drop-position";
-import { createProjectAction, createProjectTaskAction, moveProjectTaskAction } from "./server-actions";
+import { createProjectAction, createProjectTaskAction, moveProjectTaskAction, updateProjectArchiveAction } from "./server-actions";
 import { TaskDetailDrawer } from "./task-detail-drawer";
 
 type ProjectsBoardClientProps = {
+  initialArchived: boolean;
   initialArea: ProjectArea;
   initialBoard: ProjectBoard;
 };
@@ -82,7 +83,7 @@ function dropPlacementFromRects(event: DragEndEvent): ProjectDropPlacement {
   return activeCenterY > overCenterY ? "after" : "before";
 }
 
-export function ProjectsBoardClient({ initialArea, initialBoard }: ProjectsBoardClientProps) {
+export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard }: ProjectsBoardClientProps) {
   const [board, setBoard] = useState(initialBoard);
   const [query, setQuery] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -193,7 +194,7 @@ export function ProjectsBoardClient({ initialArea, initialBoard }: ProjectsBoard
               {PROJECT_AREA_ORDER.map((area) => (
                 <a
                   key={area}
-                  href={`/projects?area=${encodeURIComponent(area)}`}
+                  href={`/projects?area=${encodeURIComponent(area)}${initialArchived ? "&archived=1" : ""}`}
                   className={`rounded-md px-2 py-2 text-center text-xs font-medium transition ${
                     area === initialArea
                       ? "bg-[var(--accent)] text-black"
@@ -205,51 +206,90 @@ export function ProjectsBoardClient({ initialArea, initialBoard }: ProjectsBoard
               ))}
             </div>
 
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <a
+                href={`/projects?area=${encodeURIComponent(initialArea)}`}
+                className={`rounded-lg border px-3 py-2 text-center text-xs font-medium transition ${
+                  !initialArchived
+                    ? "border-[var(--accent)] text-[var(--text)]"
+                    : "border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)]"
+                }`}
+              >
+                Active
+              </a>
+              <a
+                href={`/projects?area=${encodeURIComponent(initialArea)}&archived=1`}
+                className={`rounded-lg border px-3 py-2 text-center text-xs font-medium transition ${
+                  initialArchived
+                    ? "border-[var(--accent)] text-[var(--text)]"
+                    : "border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)]"
+                }`}
+              >
+                Archived
+              </a>
+            </div>
+
             <nav className="mt-4 space-y-2">
               {board.projects.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
-                  Add a project to start planning.
+                  {initialArchived ? "No archived projects in this area." : "Add a project to start planning."}
                 </p>
               ) : (
                 board.projects.map((project) => (
-                  <a
-                    key={project.id}
-                    href={`/projects?area=${encodeURIComponent(initialArea)}&project=${encodeURIComponent(project.id)}`}
-                    className={`block rounded-lg border px-3 py-2 text-sm transition ${
-                      project.id === activeProject?.id
-                        ? "border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_14%,transparent)] text-[var(--text)]"
-                        : "border-[var(--border)] bg-[var(--bg-muted)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)]"
-                    }`}
-                  >
-                    <span className="block font-medium">{project.name}</span>
-                    {project.description && <span className="mt-1 block line-clamp-2 text-xs">{project.description}</span>}
-                  </a>
+                  <div key={project.id} className="rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] p-3">
+                    <a
+                      href={`/projects?area=${encodeURIComponent(initialArea)}${
+                        initialArchived ? "&archived=1" : ""
+                      }&project=${encodeURIComponent(project.id)}`}
+                      className={`block text-sm transition ${
+                        project.id === activeProject?.id ? "text-[var(--text)]" : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                      }`}
+                    >
+                      <span className="block font-medium">{project.name}</span>
+                      {project.description && <span className="mt-1 block line-clamp-2 text-xs">{project.description}</span>}
+                    </a>
+                    {initialArchived && (
+                      <form action={updateProjectArchiveAction} className="mt-3">
+                        <input type="hidden" name="projectId" value={project.id} />
+                        <input type="hidden" name="area" value={initialArea} />
+                        <input type="hidden" name="archived" value="false" />
+                        <button
+                          type="submit"
+                          className="w-full rounded-md border border-[var(--border)] px-2 py-1.5 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)]"
+                        >
+                          Restore
+                        </button>
+                      </form>
+                    )}
+                  </div>
                 ))
               )}
             </nav>
 
-            <form action={createProjectAction} className="mt-5 space-y-2">
-              <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">Add project</p>
-              <input type="hidden" name="area" value={initialArea} />
-              <input
-                name="name"
-                placeholder="Project name"
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
-                required
-              />
-              <textarea
-                name="description"
-                placeholder="Optional description"
-                rows={3}
-                className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
-              />
-              <button
-                type="submit"
-                className="w-full rounded-lg bg-[var(--accent)] px-3 py-2 text-sm font-medium text-black transition hover:bg-[var(--accent-strong)]"
-              >
-                Create project
-              </button>
-            </form>
+            {!initialArchived && (
+              <form action={createProjectAction} className="mt-5 space-y-2">
+                <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">Add project</p>
+                <input type="hidden" name="area" value={initialArea} />
+                <input
+                  name="name"
+                  placeholder="Project name"
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+                  required
+                />
+                <textarea
+                  name="description"
+                  placeholder="Optional description"
+                  rows={3}
+                  className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+                />
+                <button
+                  type="submit"
+                  className="w-full rounded-lg bg-[var(--accent)] px-3 py-2 text-sm font-medium text-black transition hover:bg-[var(--accent-strong)]"
+                >
+                  Create project
+                </button>
+              </form>
+            )}
           </aside>
 
           <section className="min-w-0 space-y-4">
@@ -261,15 +301,31 @@ export function ProjectsBoardClient({ initialArea, initialBoard }: ProjectsBoard
                   {activeProject?.description && (
                     <p className="mt-1 max-w-2xl text-sm text-[var(--text-muted)]">{activeProject.description}</p>
                   )}
+                  {initialArchived && <p className="mt-2 text-sm text-[var(--text-muted)]">Archived projects are preserved and can be restored.</p>}
                 </div>
                 <div className="ml-auto flex flex-wrap items-center gap-2">
-                  <input
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search tasks"
-                    className="w-56 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
-                  />
-                  {activeProject && (
+                  {!initialArchived && (
+                    <input
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Search tasks"
+                      className="w-56 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+                    />
+                  )}
+                  {activeProject && !initialArchived && (
+                    <form action={updateProjectArchiveAction}>
+                      <input type="hidden" name="projectId" value={activeProject.id} />
+                      <input type="hidden" name="area" value={initialArea} />
+                      <input type="hidden" name="archived" value="true" />
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-red-500/50 px-3 py-2 text-sm font-medium text-red-300 transition hover:bg-red-500/10"
+                      >
+                        Archive project
+                      </button>
+                    </form>
+                  )}
+                  {activeProject && !initialArchived && (
                     <form action={createProjectTaskAction} className="flex gap-2">
                       <input type="hidden" name="projectId" value={activeProject.id} />
                       <input type="hidden" name="status" value="todo" />
@@ -294,7 +350,11 @@ export function ProjectsBoardClient({ initialArea, initialBoard }: ProjectsBoard
               </div>
             </div>
 
-            {activeProject ? (
+            {initialArchived ? (
+              <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg-elevated)] p-8 text-center text-sm text-[var(--text-muted)]">
+                Select an archived project on the left and click Restore to bring it back.
+              </div>
+            ) : activeProject ? (
               <div className="grid gap-3 xl:grid-cols-5">
                 {PROJECT_STATUS_ORDER.map((status) => (
                   <ProjectStatusColumn

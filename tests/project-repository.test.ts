@@ -7,12 +7,14 @@ import {
   nextProjectPosition,
   nextTaskPosition,
   sanitizeProjectLabels,
+  updateProjectArchive,
   updateChecklistItem,
   updateProjectTask,
 } from "../lib/projects/repository";
 
 const mockState = vi.hoisted(() => ({
   insertProjectTask: vi.fn(),
+  updateProject: vi.fn(),
   updateChecklistItem: vi.fn(),
   updateProjectTask: vi.fn(),
   projects: [] as Project[],
@@ -22,16 +24,21 @@ const mockState = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from(table: string) {
-      const filters: Array<{ column: string; value: unknown }> = [];
+      const filters: Array<{ column: string; value: unknown; op: "eq" | "is" | "not-is" }> = [];
       const query = {
         select() {
           return query;
         },
         eq(column: string, value: unknown) {
-          filters.push({ column, value });
+          filters.push({ column, value, op: "eq" });
           return query;
         },
-        is() {
+        is(column: string, value: unknown) {
+          filters.push({ column, value, op: "is" });
+          return query;
+        },
+        not(column: string, op: string, value: unknown) {
+          if (op === "is") filters.push({ column, value, op: "not-is" });
           return query;
         },
         order() {
@@ -45,11 +52,25 @@ vi.mock("@/lib/supabase/admin", () => ({
           return query;
         },
         update(payload: unknown) {
+          if (table === "projects") mockState.updateProject(payload);
           if (table === "project_tasks") mockState.updateProjectTask(payload);
           if (table === "project_checklist_items") mockState.updateChecklistItem(payload);
           return query;
         },
         single() {
+          if (table === "projects") {
+            const row = mockState.projects.find((project) =>
+              filters.every((filter) => {
+                const value = project[filter.column as keyof Project];
+                return filter.op === "not-is" ? value !== filter.value : value === filter.value;
+              }),
+            );
+            return Promise.resolve({
+              data: row ? { ...row, ...mockState.updateProject.mock.calls.at(-1)?.[0] } : null,
+              error: row ? null : { message: "not found" },
+            });
+          }
+
           if (table === "project_checklist_items") {
             return Promise.resolve({
               data: {
@@ -87,7 +108,10 @@ vi.mock("@/lib/supabase/admin", () => ({
           if (table === "projects") {
             resolve({
               data: mockState.projects.filter((project) =>
-                filters.every((filter) => project[filter.column as keyof Project] === filter.value),
+                filters.every((filter) => {
+                  const value = project[filter.column as keyof Project];
+                  return filter.op === "not-is" ? value !== filter.value : value === filter.value;
+                }),
               ),
               error: null,
             });
@@ -110,6 +134,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 describe("project repository helpers", () => {
   beforeEach(() => {
     mockState.insertProjectTask.mockClear();
+    mockState.updateProject.mockClear();
     mockState.updateChecklistItem.mockClear();
     mockState.updateProjectTask.mockClear();
     mockState.projects = [
@@ -173,6 +198,49 @@ describe("project repository helpers", () => {
     const projects = await listProjects("user-1", "delivery");
 
     expect(projects.map((project) => project.id)).toEqual(["delivery-project"]);
+  });
+
+  it("lists archived projects separately from active projects", async () => {
+    mockState.projects = [
+      {
+        id: "active-project",
+        user_id: "user-1",
+        area: "delivery",
+        name: "Active",
+        description: null,
+        position: 1000,
+        archived_at: null,
+        created_at: "2026-05-30T00:00:00Z",
+        updated_at: "2026-05-30T00:00:00Z",
+      },
+      {
+        id: "archived-project",
+        user_id: "user-1",
+        area: "delivery",
+        name: "Archived",
+        description: null,
+        position: 2000,
+        archived_at: "2026-05-31T00:00:00Z",
+        created_at: "2026-05-30T00:00:00Z",
+        updated_at: "2026-05-30T00:00:00Z",
+      },
+    ];
+
+    await expect(listProjects("user-1", "delivery")).resolves.toMatchObject([{ id: "active-project" }]);
+    await expect(listProjects("user-1", "delivery", { archived: true })).resolves.toMatchObject([
+      { id: "archived-project" },
+    ]);
+  });
+
+  it("archives and restores projects by writing archived_at only on owned project rows", async () => {
+    const archived = await updateProjectArchive("user-1", "project-1", true);
+    const restored = await updateProjectArchive("user-1", "project-1", false);
+
+    expect(archived.archived_at).toEqual(expect.any(String));
+    expect(restored.archived_at).toBeNull();
+    expect(mockState.updateProject).toHaveBeenCalledTimes(2);
+    expect(mockState.updateProject.mock.calls[0][0]).toMatchObject({ archived_at: expect.any(String) });
+    expect(mockState.updateProject.mock.calls[1][0]).toMatchObject({ archived_at: null });
   });
 
   it("builds top-level task nodes with subtasks and checklists", () => {

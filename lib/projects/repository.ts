@@ -66,13 +66,18 @@ export function buildProjectTaskNodes(tasks: ProjectTask[], checklistItems: Proj
   }));
 }
 
-export async function listProjects(userId: string, area?: ProjectArea | null): Promise<Project[]> {
+export async function listProjects(
+  userId: string,
+  area?: ProjectArea | null,
+  options: { archived?: boolean } = {},
+): Promise<Project[]> {
   const supabase = createAdminClient();
   let query = supabase
     .from("projects")
     .select(PROJECT_COLUMNS)
-    .eq("user_id", userId)
-    .is("archived_at", null);
+    .eq("user_id", userId);
+
+  query = options.archived ? query.not("archived_at", "is", null) : query.is("archived_at", null);
 
   if (area) query = query.eq("area", area);
 
@@ -105,8 +110,13 @@ export async function createProject(userId: string, input: { name: string; descr
   return data as Project;
 }
 
-export async function loadProjectBoard(userId: string, projectId?: string | null, area?: ProjectArea | null) {
-  const projects = await listProjects(userId, area ?? null);
+export async function loadProjectBoard(
+  userId: string,
+  projectId?: string | null,
+  area?: ProjectArea | null,
+  options: { archived?: boolean } = {},
+) {
+  const projects = await listProjects(userId, area ?? null, options);
   const activeProject = projectId
     ? projects.find((project) => project.id === projectId) ?? projects[0] ?? null
     : projects[0] ?? null;
@@ -148,6 +158,23 @@ export async function loadProjectBoard(userId: string, projectId?: string | null
     activeProject,
     tasks: buildProjectTaskNodes(tasks, (checklistRows ?? []) as ProjectChecklistItem[]),
   };
+}
+
+export async function updateProjectArchive(userId: string, projectId: string, archived: boolean) {
+  if (!projectId.trim()) throw new Error("Project id is required");
+  const archivedAt = archived ? new Date().toISOString() : null;
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .update({ archived_at: archivedAt, updated_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("id", projectId)
+    .select(PROJECT_COLUMNS)
+    .single();
+
+  if (error || !data) throw new Error(`Failed to update project: ${error?.message ?? "missing row"}`);
+  return data as Project;
 }
 
 export async function createProjectTask(

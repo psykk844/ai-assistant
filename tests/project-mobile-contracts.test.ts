@@ -7,6 +7,7 @@ import {
   projectAreaTabs,
   projectStatusTabs,
   resetMockProjectBoard,
+  updateMobileProjectArchive,
   updateMobileProjectChecklistItem,
   updateMobileProjectTask,
 } from "../mobile/lib/projects-api";
@@ -127,5 +128,52 @@ describe("mobile project contracts", () => {
       "http://backend.test/api/mobile/projects?area=personal",
       expect.any(Object),
     );
+  });
+
+  it("uses the archived area query when requesting archived projects from the backend", async () => {
+    process.env.EXPO_PUBLIC_USE_REAL_BACKEND = "true";
+    process.env.EXPO_PUBLIC_BACKEND_BASE_URL = "http://backend.test";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ projects: [], activeProject: null, tasks: [] }),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await getMobileProjectBoard(null, "delivery", true);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://backend.test/api/mobile/projects?area=delivery&archived=1",
+      expect.any(Object),
+    );
+  });
+
+  it("keeps the archived query when requesting a selected archived project from the backend", async () => {
+    process.env.EXPO_PUBLIC_USE_REAL_BACKEND = "true";
+    process.env.EXPO_PUBLIC_BACKEND_BASE_URL = "http://backend.test";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ projects: [], activeProject: null, tasks: [] }),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await getMobileProjectBoard("project-archived", "delivery", true);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://backend.test/api/mobile/projects?area=delivery&archived=1&project=project-archived",
+      expect.any(Object),
+    );
+  });
+
+  it("archives and restores mock projects", async () => {
+    const board = await getMobileProjectBoard();
+    const projectId = board.activeProject?.id ?? "";
+
+    await updateMobileProjectArchive(projectId, true);
+    const archivedBoard = await getMobileProjectBoard(null, "demand", true);
+    expect(archivedBoard.projects.map((project) => project.id)).toContain(projectId);
+
+    await updateMobileProjectArchive(projectId, false);
+    const activeBoard = await getMobileProjectBoard(null, "demand", false);
+    expect(activeBoard.projects.map((project) => project.id)).toContain(projectId);
   });
 });

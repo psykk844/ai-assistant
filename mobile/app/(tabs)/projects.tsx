@@ -5,13 +5,20 @@ import {
   buildProjectTaskStatusPatch,
   createMobileProjectTask,
   getMobileProjectBoard,
+  projectAreaTabs,
   projectStatusTabs,
   updateMobileProjectTask,
 } from "../../lib/projects-api";
-import type { MobileProjectBoardPayload, MobileProjectTask, MobileProjectTaskStatus } from "../../lib/projects-types";
+import type {
+  MobileProjectArea,
+  MobileProjectBoardPayload,
+  MobileProjectTask,
+  MobileProjectTaskStatus,
+} from "../../lib/projects-types";
 
 export default function ProjectsScreen() {
   const [board, setBoard] = useState<MobileProjectBoardPayload | null>(null);
+  const [selectedArea, setSelectedArea] = useState<MobileProjectArea>("demand");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<MobileProjectTaskStatus>("todo");
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -29,7 +36,7 @@ export default function ProjectsScreen() {
       setLoading(true);
       setError(null);
       try {
-        const payload = await getMobileProjectBoard(selectedProjectId);
+        const payload = await getMobileProjectBoard(selectedProjectId, selectedArea);
         if (!active) return;
         setBoard(payload);
         setSelectedProjectId(payload.activeProject?.id ?? payload.projects[0]?.id ?? null);
@@ -44,7 +51,7 @@ export default function ProjectsScreen() {
     return () => {
       active = false;
     };
-  }, [selectedProjectId]);
+  }, [selectedArea, selectedProjectId]);
 
   const visibleTasks = useMemo(() => {
     if (!board) return [];
@@ -53,6 +60,11 @@ export default function ProjectsScreen() {
 
   async function handleProjectSelect(projectId: string) {
     setSelectedProjectId(projectId);
+  }
+
+  function handleAreaSelect(area: MobileProjectArea) {
+    setSelectedArea(area);
+    setSelectedProjectId(null);
   }
 
   async function handleStatusChange(taskId: string, nextStatus: MobileProjectTaskStatus) {
@@ -132,18 +144,37 @@ export default function ProjectsScreen() {
           ) : board ? (
             <>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
-                {board.projects.map((project) => (
+                {projectAreaTabs().map((area) => (
                   <Pressable
                     accessibilityRole="button"
-                    key={project.id}
-                    onPress={() => handleProjectSelect(project.id)}
-                    style={[styles.projectChip, selectedProjectId === project.id && styles.activeProjectChip]}
+                    key={area.key}
+                    onPress={() => handleAreaSelect(area.key)}
+                    style={[styles.areaChip, selectedArea === area.key && styles.activeAreaChip]}
                   >
-                    <Text style={[styles.projectChipText, selectedProjectId === project.id && styles.activeProjectChipText]}>
-                      {project.name}
+                    <Text style={[styles.areaChipText, selectedArea === area.key && styles.activeAreaChipText]}>
+                      {area.label}
                     </Text>
                   </Pressable>
                 ))}
+              </ScrollView>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
+                {board.projects.length ? (
+                  board.projects.map((project) => (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={project.id}
+                      onPress={() => handleProjectSelect(project.id)}
+                      style={[styles.projectChip, selectedProjectId === project.id && styles.activeProjectChip]}
+                    >
+                      <Text style={[styles.projectChipText, selectedProjectId === project.id && styles.activeProjectChipText]}>
+                        {project.name}
+                      </Text>
+                    </Pressable>
+                  ))
+                ) : (
+                  <Text style={styles.muted}>No projects in this area.</Text>
+                )}
               </ScrollView>
 
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
@@ -272,6 +303,26 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   activeProjectChipText: {
+    color: "#ffffff",
+  },
+  areaChip: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  activeAreaChip: {
+    borderColor: "#111827",
+    backgroundColor: "#111827",
+  },
+  areaChipText: {
+    color: "#475569",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  activeAreaChipText: {
     color: "#ffffff",
   },
   statusTab: {

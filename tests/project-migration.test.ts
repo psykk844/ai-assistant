@@ -33,4 +33,15 @@ describe("project kanban migration", () => {
     expect(sql).toContain("ALTER TABLE public.project_checklist_items ENABLE ROW LEVEL SECURITY");
     expect(sql).not.toMatch(/ALTER TABLE\s+public\.items/i);
   });
+
+  it("adds fixed project areas without touching inbox items", async () => {
+    const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20260531_project_areas.sql"), "utf8");
+
+    expect(sql).toContain("ALTER TABLE public.projects");
+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS area TEXT NOT NULL DEFAULT 'demand'");
+    expect(sql).toContain("CHECK (area IN ('demand', 'delivery', 'personal'))");
+    expect(sql).toContain("CREATE INDEX IF NOT EXISTS projects_user_area_position_idx");
+    expect(sql).toContain("ON public.projects(user_id, area, archived_at, position, created_at)");
+    expect(sql).not.toMatch(/ALTER TABLE\s+public\.items/i);
+  });
 });

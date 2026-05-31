@@ -21,12 +21,20 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { ProjectBoard, ProjectTaskNode } from "@/lib/projects/types";
 import { checklistProgress, groupTopLevelTasksByStatus, subtaskProgress } from "@/lib/projects/progress";
-import { PROJECT_STATUS_ORDER, statusLabel, type ProjectTaskStatus } from "@/lib/projects/status";
+import {
+  PROJECT_AREA_ORDER,
+  PROJECT_STATUS_ORDER,
+  areaLabel,
+  statusLabel,
+  type ProjectArea,
+  type ProjectTaskStatus,
+} from "@/lib/projects/status";
 import { positionForProjectDrop, type ProjectDropPlacement } from "./project-drop-position";
 import { createProjectAction, createProjectTaskAction, moveProjectTaskAction } from "./server-actions";
 import { TaskDetailDrawer } from "./task-detail-drawer";
 
 type ProjectsBoardClientProps = {
+  initialArea: ProjectArea;
   initialBoard: ProjectBoard;
 };
 
@@ -74,7 +82,7 @@ function dropPlacementFromRects(event: DragEndEvent): ProjectDropPlacement {
   return activeCenterY > overCenterY ? "after" : "before";
 }
 
-export function ProjectsBoardClient({ initialBoard }: ProjectsBoardClientProps) {
+export function ProjectsBoardClient({ initialArea, initialBoard }: ProjectsBoardClientProps) {
   const [board, setBoard] = useState(initialBoard);
   const [query, setQuery] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -165,7 +173,7 @@ export function ProjectsBoardClient({ initialBoard }: ProjectsBoardClientProps) 
 
   return (
     <main className="min-h-screen bg-[var(--bg)] p-4 text-[var(--text)] md:p-6">
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <DndContext id="project-board-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <div className="mx-auto grid max-w-7xl gap-4 lg:grid-cols-[260px_1fr]">
           <aside className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
             <div className="flex items-center justify-between gap-3">
@@ -181,6 +189,22 @@ export function ProjectsBoardClient({ initialBoard }: ProjectsBoardClientProps) 
               </a>
             </div>
 
+            <div className="mt-4 grid grid-cols-3 gap-1 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] p-1">
+              {PROJECT_AREA_ORDER.map((area) => (
+                <a
+                  key={area}
+                  href={`/projects?area=${encodeURIComponent(area)}`}
+                  className={`rounded-md px-2 py-2 text-center text-xs font-medium transition ${
+                    area === initialArea
+                      ? "bg-[var(--accent)] text-black"
+                      : "text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]"
+                  }`}
+                >
+                  {areaLabel(area)}
+                </a>
+              ))}
+            </div>
+
             <nav className="mt-4 space-y-2">
               {board.projects.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
@@ -190,7 +214,7 @@ export function ProjectsBoardClient({ initialBoard }: ProjectsBoardClientProps) 
                 board.projects.map((project) => (
                   <a
                     key={project.id}
-                    href={`/projects?project=${encodeURIComponent(project.id)}`}
+                    href={`/projects?area=${encodeURIComponent(initialArea)}&project=${encodeURIComponent(project.id)}`}
                     className={`block rounded-lg border px-3 py-2 text-sm transition ${
                       project.id === activeProject?.id
                         ? "border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_14%,transparent)] text-[var(--text)]"
@@ -206,6 +230,7 @@ export function ProjectsBoardClient({ initialBoard }: ProjectsBoardClientProps) 
 
             <form action={createProjectAction} className="mt-5 space-y-2">
               <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">Add project</p>
+              <input type="hidden" name="area" value={initialArea} />
               <input
                 name="name"
                 placeholder="Project name"
@@ -406,7 +431,18 @@ const ProjectTaskCard = memo(function ProjectTaskCard({ task, pending, onOpenTas
           Drag
         </button>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium leading-snug">{task.title}</p>
+          <button
+            type="button"
+            aria-label={`Open ${task.title}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenTask(task.id);
+            }}
+            className="block w-full text-left text-sm font-medium leading-snug text-[var(--text)]"
+            disabled={pending}
+          >
+            {task.title}
+          </button>
           {task.description && <p className="mt-1 line-clamp-3 text-xs text-[var(--text-muted)]">{task.description}</p>}
         </div>
       </div>

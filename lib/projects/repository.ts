@@ -1,8 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Project, ProjectChecklistItem, ProjectLabel, ProjectTask, ProjectTaskNode } from "./types";
-import { compareProjectTaskPositions, isProjectTaskStatus, type ProjectTaskStatus } from "./status";
+import { compareProjectTaskPositions, isProjectArea, isProjectTaskStatus, type ProjectArea, type ProjectTaskStatus } from "./status";
 
-const PROJECT_COLUMNS = "id,user_id,name,description,position,archived_at,created_at,updated_at";
+const PROJECT_COLUMNS = "id,user_id,area,name,description,position,archived_at,created_at,updated_at";
 const TASK_COLUMNS = "id,project_id,parent_task_id,title,description,status,position,due_date,labels,archived_at,created_at,updated_at";
 const CHECKLIST_COLUMNS = "id,task_id,title,completed,position,created_at,updated_at";
 
@@ -66,30 +66,34 @@ export function buildProjectTaskNodes(tasks: ProjectTask[], checklistItems: Proj
   }));
 }
 
-export async function listProjects(userId: string): Promise<Project[]> {
+export async function listProjects(userId: string, area?: ProjectArea | null): Promise<Project[]> {
   const supabase = createAdminClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("projects")
     .select(PROJECT_COLUMNS)
     .eq("user_id", userId)
-    .is("archived_at", null)
-    .order("position", { ascending: true })
-    .order("created_at", { ascending: true });
+    .is("archived_at", null);
+
+  if (area) query = query.eq("area", area);
+
+  const { data, error } = await query.order("position", { ascending: true }).order("created_at", { ascending: true });
 
   if (error) throw new Error(`Failed to load projects: ${error.message}`);
   return (data ?? []) as Project[];
 }
 
-export async function createProject(userId: string, input: { name: string; description?: string | null }) {
+export async function createProject(userId: string, input: { name: string; description?: string | null; area?: ProjectArea }) {
   const name = input.name.trim();
   if (!name) throw new Error("Project name is required");
+  const area = isProjectArea(input.area) ? input.area : "demand";
 
-  const projects = await listProjects(userId);
+  const projects = await listProjects(userId, area);
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("projects")
     .insert({
       user_id: userId,
+      area,
       name,
       description: input.description?.trim() || null,
       position: nextProjectPosition(projects),
@@ -101,8 +105,8 @@ export async function createProject(userId: string, input: { name: string; descr
   return data as Project;
 }
 
-export async function loadProjectBoard(userId: string, projectId?: string | null) {
-  const projects = await listProjects(userId);
+export async function loadProjectBoard(userId: string, projectId?: string | null, area?: ProjectArea | null) {
+  const projects = await listProjects(userId, area ?? null);
   const activeProject = projectId
     ? projects.find((project) => project.id === projectId) ?? projects[0] ?? null
     : projects[0] ?? null;

@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { projectTaskMovePatchFromForm } from "../app/projects/actions";
+import { projectAreaFromForm, projectTaskMovePatchFromForm } from "../app/projects/actions";
 import { positionForProjectDrop } from "../app/projects/project-drop-position";
 
 describe("project web actions", () => {
+  it("parses project area from forms with demand as the default", () => {
+    const deliveryForm = new FormData();
+    deliveryForm.set("area", "delivery");
+    const invalidForm = new FormData();
+    invalidForm.set("area", "marketing");
+
+    expect(projectAreaFromForm(deliveryForm)).toBe("delivery");
+    expect(projectAreaFromForm(new FormData())).toBe("demand");
+    expect(projectAreaFromForm(invalidForm)).toBe("demand");
+  });
+
   it("parses a valid drag/drop move form", () => {
     const form = new FormData();
     form.set("taskId", "task-1");

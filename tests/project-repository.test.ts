@@ -3,6 +3,7 @@ import type { Project, ProjectChecklistItem, ProjectTask } from "../lib/projects
 import {
   buildProjectTaskNodes,
   createProjectTask,
+  listProjects,
   nextProjectPosition,
   nextTaskPosition,
   sanitizeProjectLabels,
@@ -21,11 +22,13 @@ const mockState = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from(table: string) {
+      const filters: Array<{ column: string; value: unknown }> = [];
       const query = {
         select() {
           return query;
         },
-        eq() {
+        eq(column: string, value: unknown) {
+          filters.push({ column, value });
           return query;
         },
         is() {
@@ -82,7 +85,12 @@ vi.mock("@/lib/supabase/admin", () => ({
         },
         then(resolve: (value: unknown) => void) {
           if (table === "projects") {
-            resolve({ data: mockState.projects, error: null });
+            resolve({
+              data: mockState.projects.filter((project) =>
+                filters.every((filter) => project[filter.column as keyof Project] === filter.value),
+              ),
+              error: null,
+            });
             return;
           }
 
@@ -108,6 +116,7 @@ describe("project repository helpers", () => {
       {
         id: "project-1",
         user_id: "user-1",
+        area: "demand",
         name: "Project",
         description: null,
         position: 1000,
@@ -133,6 +142,37 @@ describe("project repository helpers", () => {
     expect(nextProjectPosition([])).toBe(1000);
     expect(nextProjectPosition([{ position: 1000 }, { position: 2000 }])).toBe(3000);
     expect(nextTaskPosition([{ position: 10 }, { position: 20 }])).toBe(1020);
+  });
+
+  it("filters projects by area before ordering", async () => {
+    mockState.projects = [
+      {
+        id: "demand-project",
+        user_id: "user-1",
+        area: "demand",
+        name: "Demand",
+        description: null,
+        position: 1000,
+        archived_at: null,
+        created_at: "2026-05-30T00:00:00Z",
+        updated_at: "2026-05-30T00:00:00Z",
+      },
+      {
+        id: "delivery-project",
+        user_id: "user-1",
+        area: "delivery",
+        name: "Delivery",
+        description: null,
+        position: 1000,
+        archived_at: null,
+        created_at: "2026-05-30T00:00:00Z",
+        updated_at: "2026-05-30T00:00:00Z",
+      },
+    ];
+
+    const projects = await listProjects("user-1", "delivery");
+
+    expect(projects.map((project) => project.id)).toEqual(["delivery-project"]);
   });
 
   it("builds top-level task nodes with subtasks and checklists", () => {
@@ -170,6 +210,7 @@ describe("project repository helpers", () => {
       {
         id: "other-project",
         user_id: "user-1",
+        area: "demand",
         name: "Other",
         description: null,
         position: 1000,

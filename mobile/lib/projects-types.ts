@@ -1,7 +1,8 @@
 export type MobileProjectTaskStatus = "backlog" | "todo" | "doing" | "waiting" | "done";
+export type MobileProjectArea = "demand" | "delivery" | "personal";
 
 export type MobileProjectLabel = { name: string; color: string };
-export type MobileProject = { id: string; name: string; description: string | null; position: number };
+export type MobileProject = { id: string; area: MobileProjectArea; name: string; description: string | null; position: number };
 export type MobileProjectChecklistItem = { id: string; task_id: string; title: string; completed: boolean; position: number };
 
 export type MobileProjectSubtask = {

@@ -8,7 +8,12 @@ import {
   updateChecklistItem,
   updateProjectTask,
 } from "@/lib/projects/repository";
-import { isProjectTaskStatus, type ProjectTaskStatus } from "@/lib/projects/status";
+import { isProjectArea, isProjectTaskStatus, type ProjectArea, type ProjectTaskStatus } from "@/lib/projects/status";
+
+export function projectAreaFromForm(formData: FormData): ProjectArea {
+  const area = String(formData.get("area") ?? "").trim();
+  return isProjectArea(area) ? area : "demand";
+}
 
 export function projectTaskMovePatchFromForm(formData: FormData) {
   const taskId = String(formData.get("taskId") ?? "").trim();
@@ -28,12 +33,14 @@ export function projectTaskMovePatchFromForm(formData: FormData) {
 
 export async function createProjectAction(formData: FormData) {
   const userId = await resolveSessionUserId();
+  const area = projectAreaFromForm(formData);
   const project = await createProject(userId, {
+    area,
     name: String(formData.get("name") ?? ""),
     description: String(formData.get("description") ?? ""),
   });
   revalidatePath("/projects");
-  redirect(`/projects?project=${encodeURIComponent(project.id)}`);
+  redirect(`/projects?area=${encodeURIComponent(area)}&project=${encodeURIComponent(project.id)}`);
 }
 
 export async function createProjectTaskAction(formData: FormData) {

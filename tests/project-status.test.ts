@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { PROJECT_STATUS_ORDER, isProjectTaskStatus, statusLabel, compareProjectTaskPositions } from "../lib/projects/status";
+import {
+  PROJECT_AREA_ORDER,
+  PROJECT_STATUS_ORDER,
+  areaLabel,
+  compareProjectTaskPositions,
+  isProjectArea,
+  isProjectTaskStatus,
+  statusLabel,
+} from "../lib/projects/status";
 
 describe("project task statuses", () => {
+  it("uses the fixed v1 project areas", () => {
+    expect(PROJECT_AREA_ORDER).toEqual(["demand", "delivery", "personal"]);
+    expect(areaLabel("demand")).toBe("Demand");
+    expect(areaLabel("delivery")).toBe("Delivery");
+    expect(areaLabel("personal")).toBe("Personal");
+    expect(isProjectArea("demand")).toBe(true);
+    expect(isProjectArea("marketing")).toBe(false);
+  });
+
   it("uses the fixed v1 status order", () => {
     expect(PROJECT_STATUS_ORDER).toEqual(["backlog", "todo", "doing", "waiting", "done"]);
   });

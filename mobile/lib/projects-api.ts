@@ -1,6 +1,21 @@
-import type { MobileProjectBoardPayload, MobileProjectSubtask, MobileProjectTask, MobileProjectTaskStatus } from "./projects-types";
+import type {
+  MobileProjectArea,
+  MobileProjectBoardPayload,
+  MobileProjectSubtask,
+  MobileProjectTask,
+  MobileProjectTaskStatus,
+} from "./projects-types";
 
 type ProjectStatusTab = { key: MobileProjectTaskStatus; label: string };
+type ProjectAreaTab = { key: MobileProjectArea; label: string };
+
+export function projectAreaTabs(): ProjectAreaTab[] {
+  return [
+    { key: "demand", label: "Demand" },
+    { key: "delivery", label: "Delivery" },
+    { key: "personal", label: "Personal" },
+  ];
+}
 
 export function projectStatusTabs(): ProjectStatusTab[] {
   return [
@@ -46,13 +61,28 @@ export async function requestProjectsApi<T>(path: string, init: RequestInit = {}
 function createInitialMockProjectBoard(): MobileProjectBoardPayload {
   const activeProject = {
     id: "project-mobile-demo",
+    area: "demand" as const,
     name: "Mobile Project",
     description: "A project board for mobile development",
     position: 1000,
   };
+  const deliveryProject = {
+    id: "project-mobile-delivery",
+    area: "delivery" as const,
+    name: "Delivery Project",
+    description: "Operations and service delivery",
+    position: 1000,
+  };
+  const personalProject = {
+    id: "project-mobile-personal",
+    area: "personal" as const,
+    name: "Personal Project",
+    description: "Personal goals",
+    position: 1000,
+  };
 
   return {
-    projects: [activeProject],
+    projects: [activeProject, deliveryProject, personalProject],
     activeProject,
     tasks: [
       {
@@ -146,18 +176,28 @@ export async function buildMockProjectBoard(): Promise<MobileProjectBoardPayload
   return cloneMockBoard(createInitialMockProjectBoard());
 }
 
-export async function getMobileProjectBoard(projectId?: string | null): Promise<MobileProjectBoardPayload> {
+export async function getMobileProjectBoard(
+  projectId?: string | null,
+  area: MobileProjectArea = "demand",
+): Promise<MobileProjectBoardPayload> {
   if (!canUseBackendApi()) {
+    const projects = mockProjectBoard.projects.filter((project) => (projectId ? true : project.area === area));
     const requestedProject = projectId
-      ? mockProjectBoard.projects.find((project) => project.id === projectId) ?? mockProjectBoard.activeProject
-      : mockProjectBoard.activeProject;
+      ? mockProjectBoard.projects.find((project) => project.id === projectId) ?? projects[0] ?? null
+      : projects[0] ?? null;
     return cloneMockBoard({
       ...mockProjectBoard,
+      projects,
       activeProject: requestedProject,
+      tasks: requestedProject
+        ? mockProjectBoard.tasks.filter((task) => task.project_id === requestedProject.id)
+        : [],
     });
   }
 
-  const path = projectId ? `/api/mobile/projects/${encodeURIComponent(projectId)}/board` : "/api/mobile/projects";
+  const path = projectId
+    ? `/api/mobile/projects/${encodeURIComponent(projectId)}/board`
+    : `/api/mobile/projects?area=${encodeURIComponent(area)}`;
   return requestProjectsApi<MobileProjectBoardPayload>(path);
 }
 

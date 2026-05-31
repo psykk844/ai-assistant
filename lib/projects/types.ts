@@ -1,4 +1,4 @@
-import type { ProjectTaskStatus } from "./status";
+import type { ProjectArea, ProjectTaskStatus } from "./status";
 
 export type ProjectLabel = {
   name: string;
@@ -8,6 +8,7 @@ export type ProjectLabel = {
 export type Project = {
   id: string;
   user_id: string;
+  area: ProjectArea;
   name: string;
   description: string | null;
   position: number;

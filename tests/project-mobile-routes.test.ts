@@ -11,6 +11,7 @@ function seedProjectData() {
     {
       id: "project-1",
       user_id: "user-1",
+      area: "demand",
       name: "Todo App",
       description: null,
       position: 1000,
@@ -21,6 +22,7 @@ function seedProjectData() {
     {
       id: "project-2",
       user_id: "user-1",
+      area: "delivery",
       name: "Second Project",
       description: null,
       position: 2000,
@@ -201,6 +203,21 @@ describe("mobile project routes", () => {
     expect(response.status).toBe(200);
     expect(body.projects[0].name).toBe("Todo App");
     expect(body.tasks[0].id).toBe("task-1");
+  });
+
+  it("filters mobile projects by area", async () => {
+    const { GET } = await import("../app/api/mobile/projects/route");
+    const response = await GET(
+      new Request("http://localhost/api/mobile/projects?area=delivery", {
+        headers: { "x-mobile-dev-key": "test-mobile-key" },
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.projects.map((project: { name: string }) => project.name)).toEqual(["Second Project"]);
+    expect(body.activeProject.name).toBe("Second Project");
+    expect(body.tasks.map((task: { title: string }) => task.title)).toEqual(["Other project task"]);
   });
 
   it("returns unauthorized with CORS headers when mobile auth is missing", async () => {

@@ -4,6 +4,7 @@ import {
   buildProjectTaskStatusPatch,
   createMobileProjectTask,
   getMobileProjectBoard,
+  projectAreaTabs,
   projectStatusTabs,
   resetMockProjectBoard,
   updateMobileProjectChecklistItem,
@@ -21,6 +22,14 @@ afterEach(() => {
 });
 
 describe("mobile project contracts", () => {
+  it("exposes fixed project area tabs for mobile", () => {
+    expect(projectAreaTabs()).toEqual([
+      { key: "demand", label: "Demand" },
+      { key: "delivery", label: "Delivery" },
+      { key: "personal", label: "Personal" },
+    ]);
+  });
+
   it("exposes fixed status tabs for mobile", () => {
     expect(projectStatusTabs()).toEqual([
       { key: "backlog", label: "Backlog" },
@@ -37,6 +46,14 @@ describe("mobile project contracts", () => {
     expect(board.projects.length).toBeGreaterThan(0);
     expect(board.activeProject).toBeTruthy();
     expect(board.tasks.every((task) => "project_id" in task)).toBe(true);
+  });
+
+  it("filters the mock board by project area", async () => {
+    const board = await getMobileProjectBoard(null, "delivery");
+
+    expect(board.projects.map((project) => project.area)).toEqual(["delivery"]);
+    expect(board.activeProject?.area).toBe("delivery");
+    expect(board.tasks).toEqual([]);
   });
 
   it("builds a mobile status patch without inbox lane fields", () => {
@@ -91,6 +108,23 @@ describe("mobile project contracts", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "http://backend.test/api/mobile/projects/project-1/board",
+      expect.any(Object),
+    );
+  });
+
+  it("uses the area query when requesting an area board from the backend", async () => {
+    process.env.EXPO_PUBLIC_USE_REAL_BACKEND = "true";
+    process.env.EXPO_PUBLIC_BACKEND_BASE_URL = "http://backend.test";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ projects: [], activeProject: null, tasks: [] }),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await getMobileProjectBoard(null, "personal");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://backend.test/api/mobile/projects?area=personal",
       expect.any(Object),
     );
   });

@@ -22,6 +22,8 @@ test("projects kanban web flow stays isolated from inbox todos", async ({ page }
 
   await page.goto(new URL("/projects", baseUrl).toString(), { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: "Kanban" }).first()).toBeVisible();
+  await page.getByRole("link", { name: "Delivery" }).click();
+  await expect(page).toHaveURL(/area=delivery/);
 
   await page.getByPlaceholder("Project name").fill(projectName);
   await page.getByPlaceholder("Optional description").fill("Created by Projects web smoke");
@@ -32,8 +34,10 @@ test("projects kanban web flow stays isolated from inbox todos", async ({ page }
   await page.locator("section").filter({ hasText: /^Backlog/ }).getByRole("button", { name: "Add task" }).click();
   await expect(page.getByText(taskName).first()).toBeVisible({ timeout: 20_000 });
 
-  await page.getByText(taskName).first().click();
-  await expect(page.getByText("Task detail").first()).toBeVisible();
+  await expect(async () => {
+    await page.getByRole("button", { name: `Open ${taskName}` }).click();
+    await expect(page.getByText("Task detail").first()).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 10_000 });
 
   await page.locator("select").selectOption("doing");
   await expect(page.getByText("Saved.").first()).toBeVisible({ timeout: 20_000 });

@@ -1,10 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Project, ProjectChecklistItem, ProjectLabel, ProjectTask, ProjectTaskNode } from "./types";
+import type { FocusedProjectTask, Project, ProjectChecklistItem, ProjectLabel, ProjectTask, ProjectTaskFocus, ProjectTaskNode } from "./types";
 import { compareProjectTaskPositions, isProjectArea, isProjectTaskStatus, type ProjectArea, type ProjectTaskStatus } from "./status";
 
 const PROJECT_COLUMNS = "id,user_id,area,name,description,position,archived_at,created_at,updated_at";
 const TASK_COLUMNS = "id,project_id,parent_task_id,title,description,status,position,due_date,labels,archived_at,created_at,updated_at";
 const CHECKLIST_COLUMNS = "id,task_id,title,completed,position,created_at,updated_at";
+const FOCUS_COLUMNS = "id,user_id,project_task_id,lane,my_day_order,created_at,updated_at";
 
 export function sanitizeProjectLabels(value: unknown): ProjectLabel[] {
   if (!Array.isArray(value)) return [];
@@ -175,6 +176,123 @@ export async function updateProjectArchive(userId: string, projectId: string, ar
 
   if (error || !data) throw new Error(`Failed to update project: ${error?.message ?? "missing row"}`);
   return data as Project;
+}
+
+async function requireActiveProjectTask(userId: string, taskId: string) {
+  if (!taskId.trim()) throw new Error("Task id is required");
+
+  const supabase = createAdminClient();
+  const { data: task, error: taskError } = await supabase
+    .from("project_tasks")
+    .select(TASK_COLUMNS)
+    .eq("user_id", userId)
+    .eq("id", taskId)
+    .is("archived_at", null)
+    .single();
+
+  if (taskError || !task) throw new Error("Project task not found");
+
+  const projectTask = { ...(task as ProjectTask), labels: sanitizeProjectLabels((task as ProjectTask).labels) };
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .select(PROJECT_COLUMNS)
+    .eq("user_id", userId)
+    .eq("id", projectTask.project_id)
+    .is("archived_at", null)
+    .single();
+
+  if (projectError || !project) throw new Error("Project not found");
+  return { task: projectTask, project: project as Project };
+}
+
+export async function addProjectTaskFocus(userId: string, taskId: string) {
+  await requireActiveProjectTask(userId, taskId);
+  await removeProjectTaskFocus(userId, taskId);
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("project_task_focus")
+    .insert({
+      user_id: userId,
+      project_task_id: taskId,
+      lane: "today",
+      my_day_order: null,
+    })
+    .select(FOCUS_COLUMNS)
+    .single();
+
+  if (error || !data) throw new Error(`Failed to focus project task: ${error?.message ?? "missing row"}`);
+  return data as ProjectTaskFocus;
+}
+
+export async function removeProjectTaskFocus(userId: string, taskId: string) {
+  if (!taskId.trim()) throw new Error("Task id is required");
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("project_task_focus")
+    .delete()
+    .eq("user_id", userId)
+    .eq("project_task_id", taskId);
+
+  if (error) throw new Error(`Failed to remove project task focus: ${error.message}`);
+}
+
+export async function listFocusedProjectTasks(userId: string): Promise<FocusedProjectTask[]> {
+  const supabase = createAdminClient();
+  const { data: focusRows, error: focusError } = await supabase
+    .from("project_task_focus")
+    .select(FOCUS_COLUMNS)
+    .eq("user_id", userId)
+    .eq("lane", "today")
+    .order("my_day_order", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true });
+
+  if (focusError) throw new Error(`Failed to load focused project tasks: ${focusError.message}`);
+  const focuses = (focusRows ?? []) as ProjectTaskFocus[];
+  const taskIds = focuses.map((focus) => focus.project_task_id);
+  if (taskIds.length === 0) return [];
+
+  const { data: taskRows, error: taskError } = await supabase
+    .from("project_tasks")
+    .select(TASK_COLUMNS)
+    .eq("user_id", userId)
+    .in("id", taskIds)
+    .is("archived_at", null);
+
+  if (taskError) throw new Error(`Failed to load focused project task rows: ${taskError.message}`);
+  const taskById = new Map(
+    ((taskRows ?? []) as ProjectTask[])
+      .map((task) => ({ ...task, labels: sanitizeProjectLabels(task.labels) }))
+      .filter((task) => task.status !== "done")
+      .map((task) => [task.id, task]),
+  );
+
+  const projectIds = Array.from(new Set(Array.from(taskById.values()).map((task) => task.project_id)));
+  if (projectIds.length === 0) return [];
+
+  const { data: projectRows, error: projectError } = await supabase
+    .from("projects")
+    .select(PROJECT_COLUMNS)
+    .eq("user_id", userId)
+    .in("id", projectIds)
+    .is("archived_at", null);
+
+  if (projectError) throw new Error(`Failed to load focused project rows: ${projectError.message}`);
+  const projectById = new Map(((projectRows ?? []) as Project[]).map((project) => [project.id, project]));
+
+  return focuses.flatMap((focus) => {
+    const task = taskById.get(focus.project_task_id);
+    if (!task) return [];
+    const project = projectById.get(task.project_id);
+    if (!project) return [];
+    return [{ focus, task, project }];
+  });
+}
+
+export async function completeFocusedProjectTask(userId: string, taskId: string) {
+  const task = await updateProjectTask(userId, taskId, { status: "done" });
+  await removeProjectTaskFocus(userId, taskId);
+  return task;
 }
 
 export async function createProjectTask(

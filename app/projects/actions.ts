@@ -2,9 +2,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { resolveSessionUserId } from "@/lib/auth/session-user";
 import {
+  addProjectTaskFocus,
   createChecklistItem,
   createProject,
   createProjectTask,
+  completeFocusedProjectTask,
+  removeProjectTaskFocus,
   updateChecklistItem,
   updateProjectArchive,
   updateProjectTask,
@@ -25,6 +28,12 @@ export function projectArchivePatchFromForm(formData: FormData) {
     archived: String(formData.get("archived") ?? "true") !== "false",
     projectId,
   };
+}
+
+export function projectTaskFocusPatchFromForm(formData: FormData) {
+  const taskId = String(formData.get("taskId") ?? "").trim();
+  if (!taskId) throw new Error("Task id is required");
+  return { taskId };
 }
 
 export function projectTaskMovePatchFromForm(formData: FormData) {
@@ -106,6 +115,33 @@ export async function updateProjectArchiveAction(formData: FormData) {
     redirect(`/projects?area=${encodeURIComponent(patch.area)}`);
   }
   redirect(`/projects?area=${encodeURIComponent(patch.area)}&project=${encodeURIComponent(patch.projectId)}`);
+}
+
+export async function addProjectTaskFocusAction(formData: FormData) {
+  const userId = await resolveSessionUserId();
+  const patch = projectTaskFocusPatchFromForm(formData);
+  await addProjectTaskFocus(userId, patch.taskId);
+  revalidatePath("/projects");
+  revalidatePath("/app/my-day");
+  revalidatePath("/widget");
+}
+
+export async function removeProjectTaskFocusAction(formData: FormData) {
+  const userId = await resolveSessionUserId();
+  const patch = projectTaskFocusPatchFromForm(formData);
+  await removeProjectTaskFocus(userId, patch.taskId);
+  revalidatePath("/projects");
+  revalidatePath("/app/my-day");
+  revalidatePath("/widget");
+}
+
+export async function completeFocusedProjectTaskAction(formData: FormData) {
+  const userId = await resolveSessionUserId();
+  const patch = projectTaskFocusPatchFromForm(formData);
+  await completeFocusedProjectTask(userId, patch.taskId);
+  revalidatePath("/projects");
+  revalidatePath("/app/my-day");
+  revalidatePath("/widget");
 }
 
 export async function createProjectChecklistItemAction(taskId: string, title: string) {

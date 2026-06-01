@@ -47,6 +47,22 @@ export type ProjectTaskNode = ProjectTask & {
   subtasks: Array<ProjectTask & { checklist: ProjectChecklistItem[] }>;
 };
 
+export type ProjectTaskFocus = {
+  id: string;
+  user_id: string;
+  project_task_id: string;
+  lane: "today";
+  my_day_order: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FocusedProjectTask = {
+  focus: ProjectTaskFocus;
+  project: Project;
+  task: ProjectTask;
+};
+
 export type ProjectBoard = {
   projects: Project[];
   activeProject: Project | null;

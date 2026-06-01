@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildMobileHomePayload, buildMobileBacklogPage } from "../lib/items/mobile-contracts";
 import type { InboxItem } from "../lib/items/types";
+import type { FocusedProjectTask } from "../lib/projects/types";
 
 function makeItem(id: string, priority: number, overrides: Partial<InboxItem> = {}): InboxItem {
   return {
@@ -39,6 +40,68 @@ describe("buildMobileHomePayload", () => {
       backlogTotal: 4,
     });
     expect(payload.next.some((item) => item.id.startsWith("backlog-"))).toBe(false);
+  });
+
+  it("places focused project tasks at the front of Today and cascades displaced inbox tasks into Next", () => {
+    const items = [
+      ...Array.from({ length: 5 }, (_, i) => makeItem(`today-${i + 1}`, 0.9, { metadata: { my_day_order: i } })),
+      makeItem("next-1", 0.7, { metadata: { lane: "next", my_day_order: 0 } }),
+    ];
+    const focusedProjectTasks: FocusedProjectTask[] = [
+      {
+        focus: {
+          id: "focus-1",
+          user_id: "user-1",
+          project_task_id: "project-task-1",
+          lane: "today",
+          my_day_order: null,
+          created_at: "2026-06-01T00:00:00Z",
+          updated_at: "2026-06-01T00:00:00Z",
+        },
+        project: {
+          id: "project-1",
+          user_id: "user-1",
+          area: "delivery",
+          name: "Client Delivery",
+          description: null,
+          position: 1000,
+          archived_at: null,
+          created_at: "2026-06-01T00:00:00Z",
+          updated_at: "2026-06-01T00:00:00Z",
+        },
+        task: {
+          id: "project-task-1",
+          project_id: "project-1",
+          parent_task_id: null,
+          title: "Send client report",
+          description: null,
+          status: "todo",
+          position: 1000,
+          due_date: null,
+          labels: [],
+          archived_at: null,
+          created_at: "2026-06-01T00:00:00Z",
+          updated_at: "2026-06-01T00:00:00Z",
+        },
+      },
+    ];
+
+    const payload = buildMobileHomePayload(items, focusedProjectTasks);
+
+    expect(payload.today.map((item) => item.id)).toEqual([
+      "project-task-1",
+      "today-1",
+      "today-2",
+      "today-3",
+      "today-4",
+    ]);
+    expect(payload.today[0]).toMatchObject({
+      source: "project_task",
+      project: { name: "Client Delivery", area: "delivery" },
+      lane: "today",
+    });
+    expect(payload.next.map((item) => item.id)).toEqual(["today-5", "next-1"]);
+    expect(payload.counts.todayTotal).toBe(6);
   });
 });
 

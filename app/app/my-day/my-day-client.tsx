@@ -24,6 +24,8 @@ import type { InboxItem } from "@/lib/items/types";
 import { buildSubtaskTree, getSubtaskProgress, type TreeNode } from "@/lib/items/subtask-tree";
 import { computeMyDayPlan, MY_DAY_CAP } from "@/lib/items/my-day-plan";
 import { LANE_LABELS, laneToPriority, type LaneKey } from "@/lib/items/lane";
+import type { FocusedProjectTask } from "@/lib/projects/types";
+import { areaLabel, statusLabel } from "@/lib/projects/status";
 import { mergeInitialItemsWithPendingPatches, type PendingItemPatch } from "../board-logic";
 import { buildFallbackBriefing } from "./briefing";
 import {
@@ -33,6 +35,7 @@ import {
   moveItemToLane,
   reorderMyDayItems,
 } from "../actions";
+import { completeFocusedProjectTaskAction, removeProjectTaskFocusAction } from "@/app/projects/server-actions";
 
 interface MyDayProps {
   todayItems: InboxItem[];
@@ -40,6 +43,7 @@ interface MyDayProps {
   overdueItems: InboxItem[];
   staleItems: InboxItem[];
   completedTodayCount: number;
+  focusedProjectTasks: FocusedProjectTask[];
 }
 
 type SectionKey = "top5" | "next5";
@@ -50,6 +54,7 @@ export function MyDayClient({
   overdueItems,
   staleItems,
   completedTodayCount,
+  focusedProjectTasks: initialFocusedProjectTasks,
 }: MyDayProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -58,6 +63,7 @@ export function MyDayClient({
   const [quickAddText, setQuickAddText] = useState("");
   const [quickAddLane, setQuickAddLane] = useState<LaneKey>("today");
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [focusedProjectTasks, setFocusedProjectTasks] = useState(initialFocusedProjectTasks);
   const pendingItemPatchesRef = useRef<Record<string, PendingItemPatch>>({});
 
   // Optimistic state: we mirror the server items so DnD feels instant.
@@ -67,6 +73,7 @@ export function MyDayClient({
     pendingItemPatchesRef.current = merged.remainingPatches;
     setItems(merged.items);
   }, [allActiveItems]);
+  useEffect(() => setFocusedProjectTasks(initialFocusedProjectTasks), [initialFocusedProjectTasks]);
 
   const patchItemOptimistically = useCallback((itemId: string, patch: PendingItemPatch) => {
     pendingItemPatchesRef.current = {
@@ -116,6 +123,10 @@ export function MyDayClient({
   );
 
   const plan = useMemo(() => computeMyDayPlan(topLevelItems), [topLevelItems]);
+  const focusedTop5 = focusedProjectTasks.slice(0, MY_DAY_CAP);
+  const top5InboxCapacity = Math.max(0, MY_DAY_CAP - focusedTop5.length);
+  const top5InboxItems = plan.top5.slice(0, top5InboxCapacity);
+  const next5Items = [...plan.top5.slice(top5InboxCapacity), ...plan.next5].slice(0, MY_DAY_CAP);
 
   // Get the full tree node for an item id (so we can render subtasks under it)
   const nodeById = useMemo(() => {
@@ -130,7 +141,7 @@ export function MyDayClient({
     return map;
   }, [tree]);
 
-  const totalTasks = todayItems.length;
+  const totalTasks = todayItems.length + focusedProjectTasks.length;
   const completedLocal = todayItems.filter((i) => i.status === "completed").length;
   const completedTotal = completedTodayCount + completedLocal;
   const progressPct = totalTasks + completedTodayCount > 0
@@ -403,6 +414,40 @@ export function MyDayClient({
     );
   }
 
+  function FocusedProjectTaskCard({ item }: { item: FocusedProjectTask }) {
+    return (
+      <div className="rounded-lg border border-emerald-400/30 bg-emerald-400/5 px-3 py-2">
+        <div className="flex items-start gap-2">
+          <form action={completeFocusedProjectTaskAction}>
+            <input type="hidden" name="taskId" value={item.task.id} />
+            <button
+              type="submit"
+              className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-md border-2 border-[var(--border)] text-xs transition-colors hover:border-[var(--accent)]"
+              aria-label={`Complete project task ${item.task.title}`}
+              disabled={isPending}
+            />
+          </form>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-[var(--text)]">{item.task.title}</p>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Project: {areaLabel(item.project.area)} / {item.project.name} / {statusLabel(item.task.status)}
+            </p>
+          </div>
+          <form action={removeProjectTaskFocusAction}>
+            <input type="hidden" name="taskId" value={item.task.id} />
+            <button
+              type="submit"
+              className="text-xs text-[var(--text-muted)] transition hover:text-[var(--text)]"
+              disabled={isPending}
+            >
+              Remove
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   // ============ A drop-zone section (Top 5 or Next 5) ============
   function Section({
     title,
@@ -411,6 +456,7 @@ export function MyDayClient({
     section,
     items: sectionItems,
     accentClass,
+    focusedItems = [],
   }: {
     title: string;
     subtitle: string;
@@ -418,9 +464,11 @@ export function MyDayClient({
     section: SectionKey;
     items: InboxItem[];
     accentClass: string;
+    focusedItems?: FocusedProjectTask[];
   }) {
     const { setNodeRef, isOver } = useDroppable({ id: droppableId });
-    const isFull = sectionItems.length >= MY_DAY_CAP;
+    const visibleCount = focusedItems.length + sectionItems.length;
+    const isFull = visibleCount >= MY_DAY_CAP;
     return (
       <section
         ref={setNodeRef}
@@ -434,16 +482,19 @@ export function MyDayClient({
             <p className="text-[11px] text-[var(--text-muted)]">{subtitle}</p>
           </div>
           <span className={`text-xs font-mono ${isFull ? "text-[var(--accent)]" : "text-[var(--text-muted)]"}`}>
-            {sectionItems.length}/{MY_DAY_CAP}
+            {visibleCount}/{MY_DAY_CAP}
           </span>
         </header>
-        {sectionItems.length === 0 ? (
+        {visibleCount === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-[var(--text-muted)]">
             Drop a task here or use quick-add.
           </p>
         ) : (
           <SortableContext items={sectionItems.map((i) => i.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-1.5">
+              {focusedItems.map((item) => (
+                <FocusedProjectTaskCard key={item.task.id} item={item} />
+              ))}
               {sectionItems.map((item) => (
                 <DraggableCard key={item.id} item={item} variant={section} />
               ))}
@@ -515,7 +566,8 @@ export function MyDayClient({
             subtitle="The five most important things to finish today"
             droppableId={TOP5_DROP}
             section="top5"
-            items={plan.top5}
+            items={top5InboxItems}
+            focusedItems={focusedTop5}
             accentClass="border-amber-400/30 bg-amber-400/5"
           />
           <Section
@@ -523,7 +575,7 @@ export function MyDayClient({
             subtitle="On deck after Top 5. Drag up to promote."
             droppableId={NEXT5_DROP}
             section="next5"
-            items={plan.next5}
+            items={next5Items}
             accentClass="border-sky-400/20 bg-sky-400/5"
           />
         </DndContext>

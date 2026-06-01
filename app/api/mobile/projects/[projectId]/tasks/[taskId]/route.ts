@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { loadProjectBoard, updateProjectTask, type ProjectTaskPatch } from "@/lib/projects/repository";
+import {
+  addProjectTaskFocus,
+  loadProjectBoard,
+  removeProjectTaskFocus,
+  updateProjectTask,
+  type ProjectTaskPatch,
+} from "@/lib/projects/repository";
 import { isProjectTaskStatus } from "@/lib/projects/status";
 import { mobileCorsPreflightResponse, requireMobileApiUser, unauthorizedResponse, withMobileCors } from "../../../../_shared";
 import {
@@ -47,6 +53,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ proje
     description?: unknown;
     status?: unknown;
     due_date?: unknown;
+    focusedToday?: unknown;
     labels?: unknown;
   } | null;
   if (body?.status !== undefined && !isProjectTaskStatus(body.status)) {
@@ -67,6 +74,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ proje
     }
 
     const task = await updateProjectTask(auth.userId, taskId, patch);
+    if (body?.focusedToday === true) {
+      await addProjectTaskFocus(auth.userId, taskId);
+    } else if (body?.focusedToday === false) {
+      await removeProjectTaskFocus(auth.userId, taskId);
+    }
     return withMobileCors(NextResponse.json(task), request);
   } catch (error) {
     return expectedProjectErrorResponse(error, request);

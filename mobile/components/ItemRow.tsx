@@ -12,31 +12,38 @@ type ItemRowProps = {
 };
 
 export function ItemRow({ item, onComplete, onOpenDetail, onMoveLane }: ItemRowProps) {
+  const meta =
+    item.source === "project_task" && item.project
+      ? `PROJECT - ${item.project.area.toUpperCase()} / ${item.project.name}`
+      : `${item.lane.toUpperCase()} - ${item.type}`;
+
   return (
     <View style={styles.row}>
       <Pressable style={styles.mainTapZone} onPress={() => onOpenDetail(item.id)}>
         <Text style={styles.itemTitle}>{item.title ?? item.content}</Text>
-        <Text style={styles.itemMeta}>
-          {item.lane.toUpperCase()} · {item.type}
-        </Text>
+        <Text style={styles.itemMeta}>{meta}</Text>
       </Pressable>
 
       <View style={styles.actionRow}>
         <Pressable onPress={() => onComplete(item.id)} style={styles.completeButton}>
           <Text style={styles.completeButtonText}>Complete</Text>
         </Pressable>
-        <Pressable onPress={() => onOpenDetail(item.id)} style={styles.openButton}>
-          <Text style={styles.openButtonText}>Open</Text>
-        </Pressable>
+        {item.source !== "project_task" ? (
+          <Pressable onPress={() => onOpenDetail(item.id)} style={styles.openButton}>
+            <Text style={styles.openButtonText}>Open</Text>
+          </Pressable>
+        ) : null}
       </View>
 
-      <View style={styles.moveRow}>
-        {MOVE_TARGETS.filter((lane) => lane !== item.lane).map((lane) => (
-          <Pressable key={`${item.id}-${lane}`} onPress={() => onMoveLane(item.id, lane)} style={styles.moveChip}>
-            <Text style={styles.moveChipText}>Move → {lane}</Text>
-          </Pressable>
-        ))}
-      </View>
+      {item.source !== "project_task" ? (
+        <View style={styles.moveRow}>
+          {MOVE_TARGETS.filter((lane) => lane !== item.lane).map((lane) => (
+            <Pressable key={`${item.id}-${lane}`} onPress={() => onMoveLane(item.id, lane)} style={styles.moveChip}>
+              <Text style={styles.moveChipText}>Move to {lane}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }

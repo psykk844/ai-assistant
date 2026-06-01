@@ -3,6 +3,12 @@ import { compareMyDay, computeMyDayPlan } from "./my-day-plan";
 import type { InboxItem } from "./types";
 import type { MobileBacklogPage, MobileBacklogQuery, MobileHomePayload, MobileItemPreview } from "../lib/types";
 
+type FocusedProjectTask = {
+  focus: { created_at: string };
+  project: { id: string; name: string; area: "demand" | "delivery" | "personal" };
+  task: { id: string; title: string; description: string | null; labels: Array<{ name: string }> };
+};
+
 function toMobileItemPreview(item: InboxItem): MobileItemPreview {
   return {
     id: item.id,
@@ -14,10 +20,31 @@ function toMobileItemPreview(item: InboxItem): MobileItemPreview {
     type: item.type,
     status: item.status,
     lane: laneFromItem(item),
+    source: "inbox",
   };
 }
 
-export function buildMobileHomePayload(items: InboxItem[]): MobileHomePayload {
+function toMobileProjectFocusPreview(item: FocusedProjectTask): MobileItemPreview {
+  return {
+    id: item.task.id,
+    title: item.task.title,
+    content: item.task.description ?? item.task.title,
+    created_at: item.focus.created_at,
+    priority_score: 0.85,
+    tags: item.task.labels.map((label) => label.name),
+    type: "todo",
+    status: "active",
+    lane: "today",
+    source: "project_task",
+    project: {
+      id: item.project.id,
+      name: item.project.name,
+      area: item.project.area,
+    },
+  };
+}
+
+export function buildMobileHomePayload(items: InboxItem[], focusedProjectTasks: FocusedProjectTask[] = []): MobileHomePayload {
   const counts = items.reduce(
     (acc, item) => {
       const lane = laneFromItem(item);
@@ -34,12 +61,17 @@ export function buildMobileHomePayload(items: InboxItem[]): MobileHomePayload {
       backlogTotal: 0,
     },
   );
+  counts.todayTotal += focusedProjectTasks.length;
 
   const plan = computeMyDayPlan(items);
+  const focusedToday = focusedProjectTasks.map(toMobileProjectFocusPreview).slice(0, 5);
+  const remainingTodaySlots = Math.max(0, 5 - focusedToday.length);
+  const todayInbox = plan.top5.slice(0, remainingTodaySlots);
+  const nextWithTodayOverflow = [...plan.top5.slice(remainingTodaySlots), ...plan.next5].slice(0, 5);
 
   return {
-    today: plan.top5.map(toMobileItemPreview),
-    next: plan.next5.map(toMobileItemPreview),
+    today: [...focusedToday, ...todayInbox.map(toMobileItemPreview)],
+    next: nextWithTodayOverflow.map(toMobileItemPreview),
     counts,
   };
 }

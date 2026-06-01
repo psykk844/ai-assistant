@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { completeItem, createQuickAddItem, getMobileHomePayload, moveItemToLane } from "../../lib/api";
+import { completeFocusedProjectTask, completeItem, createQuickAddItem, getMobileHomePayload, moveItemToLane } from "../../lib/api";
 import type { MobileHomePayload, MobileItemPreview } from "../../lib/types";
 import { QuickAddBar } from "../../components/QuickAddBar";
 import { ItemRow } from "../../components/ItemRow";
@@ -65,7 +65,12 @@ export default function HomeScreen() {
   }
 
   async function handleComplete(itemId: string) {
-    await completeItem(itemId);
+    const focusedProjectTask = payload?.today.find((item) => item.id === itemId && item.source === "project_task");
+    if (focusedProjectTask?.project) {
+      await completeFocusedProjectTask(focusedProjectTask.project.id, itemId);
+    } else {
+      await completeItem(itemId);
+    }
     setPayload((current) => {
       if (!current) return current;
       return completeFromHomePayload(current, itemId);
@@ -73,6 +78,11 @@ export default function HomeScreen() {
   }
 
   function handleOpenDetail(itemId: string) {
+    const focusedProjectTask = payload?.today.find((item) => item.id === itemId && item.source === "project_task");
+    if (focusedProjectTask?.project) {
+      router.push(`/project-task/${encodeURIComponent(itemId)}?projectId=${encodeURIComponent(focusedProjectTask.project.id)}` as never);
+      return;
+    }
     router.push({ pathname: "/item/[id]", params: { id: itemId } });
   }
 

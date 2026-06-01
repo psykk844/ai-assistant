@@ -7,9 +7,15 @@ export type MobileItemPreview = Pick<
   InboxItem,
   "id" | "title" | "content" | "created_at" | "priority_score" | "tags"
 > & {
+  source?: "inbox" | "project_task";
   type: ItemType;
   status: ItemStatus;
   lane: MobileLaneKey;
+  project?: {
+    id: string;
+    name: string;
+    area: "demand" | "delivery" | "personal";
+  };
 };
 
 export type MobileHomeCounts = {

@@ -1,11 +1,14 @@
 "use server";
 
 import {
+  addProjectTaskFocusAction as addProjectTaskFocusActionImpl,
   archiveProjectTaskAction as archiveProjectTaskActionImpl,
+  completeFocusedProjectTaskAction as completeFocusedProjectTaskActionImpl,
   createProjectAction as createProjectActionImpl,
   createProjectChecklistItemAction as createProjectChecklistItemActionImpl,
   createProjectTaskAction as createProjectTaskActionImpl,
   moveProjectTaskAction as moveProjectTaskActionImpl,
+  removeProjectTaskFocusAction as removeProjectTaskFocusActionImpl,
   updateProjectArchiveAction as updateProjectArchiveActionImpl,
   updateProjectChecklistItemAction as updateProjectChecklistItemActionImpl,
   updateProjectTaskAction as updateProjectTaskActionImpl,
@@ -26,6 +29,18 @@ export async function moveProjectTaskAction(formData: FormData) {
 
 export async function updateProjectArchiveAction(formData: FormData) {
   return updateProjectArchiveActionImpl(formData);
+}
+
+export async function addProjectTaskFocusAction(formData: FormData) {
+  return addProjectTaskFocusActionImpl(formData);
+}
+
+export async function removeProjectTaskFocusAction(formData: FormData) {
+  return removeProjectTaskFocusActionImpl(formData);
+}
+
+export async function completeFocusedProjectTaskAction(formData: FormData) {
+  return completeFocusedProjectTaskActionImpl(formData);
 }
 
 export async function updateProjectTaskAction(

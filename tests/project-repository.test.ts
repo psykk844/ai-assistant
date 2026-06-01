@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project, ProjectChecklistItem, ProjectTask } from "../lib/projects/types";
 import {
+  addProjectTaskFocus,
   buildProjectTaskNodes,
+  completeFocusedProjectTask,
   createProjectTask,
+  listFocusedProjectTasks,
   listProjects,
   nextProjectPosition,
   nextTaskPosition,
+  removeProjectTaskFocus,
   sanitizeProjectLabels,
   updateProjectArchive,
   updateChecklistItem,
@@ -17,14 +21,35 @@ const mockState = vi.hoisted(() => ({
   updateProject: vi.fn(),
   updateChecklistItem: vi.fn(),
   updateProjectTask: vi.fn(),
+  insertProjectFocus: vi.fn(),
+  deleteProjectFocus: vi.fn(),
   projects: [] as Project[],
   taskRows: [] as ProjectTask[],
+  focusRows: [] as Array<{
+    id: string;
+    user_id: string;
+    project_task_id: string;
+    lane: "today";
+    my_day_order: number | null;
+    created_at: string;
+    updated_at: string;
+  }>,
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from(table: string) {
-      const filters: Array<{ column: string; value: unknown; op: "eq" | "is" | "not-is" }> = [];
+      const filters: Array<{ column: string; value: unknown; op: "eq" | "is" | "not-is" | "in" }> = [];
+      let deleteRequested = false;
+      function matches(row: Record<string, unknown>) {
+        return filters.every((filter) => {
+          if (filter.column === "user_id" && !(filter.column in row)) return true;
+          const value = row[filter.column];
+          if (filter.op === "not-is") return value !== filter.value;
+          if (filter.op === "in") return Array.isArray(filter.value) && filter.value.includes(value);
+          return value === filter.value;
+        });
+      }
       const query = {
         select() {
           return query;
@@ -44,11 +69,13 @@ vi.mock("@/lib/supabase/admin", () => ({
         order() {
           return query;
         },
-        in() {
+        in(column: string, value: unknown[]) {
+          filters.push({ column, value, op: "in" });
           return query;
         },
         insert(payload: unknown) {
           if (table === "project_tasks") mockState.insertProjectTask(payload);
+          if (table === "project_task_focus") mockState.insertProjectFocus(payload);
           return query;
         },
         update(payload: unknown) {
@@ -57,17 +84,35 @@ vi.mock("@/lib/supabase/admin", () => ({
           if (table === "project_checklist_items") mockState.updateChecklistItem(payload);
           return query;
         },
+        delete() {
+          deleteRequested = true;
+          return query;
+        },
         single() {
           if (table === "projects") {
             const row = mockState.projects.find((project) =>
-              filters.every((filter) => {
-                const value = project[filter.column as keyof Project];
-                return filter.op === "not-is" ? value !== filter.value : value === filter.value;
-              }),
+              matches(project as unknown as Record<string, unknown>),
             );
             return Promise.resolve({
               data: row ? { ...row, ...mockState.updateProject.mock.calls.at(-1)?.[0] } : null,
               error: row ? null : { message: "not found" },
+            });
+          }
+
+          if (table === "project_task_focus") {
+            const payload = mockState.insertProjectFocus.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined;
+            return Promise.resolve({
+              data: payload
+                ? {
+                    id: "focus-1",
+                    lane: "today",
+                    my_day_order: null,
+                    created_at: "2026-06-01T00:00:00Z",
+                    updated_at: "2026-06-01T00:00:00Z",
+                    ...payload,
+                  }
+                : null,
+              error: payload ? null : { message: "missing row" },
             });
           }
 
@@ -84,6 +129,17 @@ vi.mock("@/lib/supabase/admin", () => ({
               },
               error: null,
             });
+          }
+
+          if (table === "project_tasks") {
+            const row = mockState.taskRows.find((task) => matches(task as unknown as Record<string, unknown>));
+            if (mockState.updateProjectTask.mock.calls.length > 0 && row) {
+              return Promise.resolve({
+                data: { ...row, ...mockState.updateProjectTask.mock.calls.at(-1)?.[0] },
+                error: null,
+              });
+            }
+            if (row) return Promise.resolve({ data: row, error: null });
           }
 
           return Promise.resolve({
@@ -105,13 +161,16 @@ vi.mock("@/lib/supabase/admin", () => ({
           });
         },
         then(resolve: (value: unknown) => void) {
+          if (deleteRequested && table === "project_task_focus") {
+            mockState.deleteProjectFocus(filters);
+            resolve({ data: null, error: null });
+            return;
+          }
+
           if (table === "projects") {
             resolve({
               data: mockState.projects.filter((project) =>
-                filters.every((filter) => {
-                  const value = project[filter.column as keyof Project];
-                  return filter.op === "not-is" ? value !== filter.value : value === filter.value;
-                }),
+                matches(project as unknown as Record<string, unknown>),
               ),
               error: null,
             });
@@ -119,7 +178,15 @@ vi.mock("@/lib/supabase/admin", () => ({
           }
 
           if (table === "project_tasks") {
-            resolve({ data: mockState.taskRows, error: null });
+            resolve({ data: mockState.taskRows.filter((task) => matches(task as unknown as Record<string, unknown>)), error: null });
+            return;
+          }
+
+          if (table === "project_task_focus") {
+            resolve({
+              data: mockState.focusRows.filter((row) => matches(row as unknown as Record<string, unknown>)),
+              error: null,
+            });
             return;
           }
 
@@ -137,6 +204,8 @@ describe("project repository helpers", () => {
     mockState.updateProject.mockClear();
     mockState.updateChecklistItem.mockClear();
     mockState.updateProjectTask.mockClear();
+    mockState.insertProjectFocus.mockClear();
+    mockState.deleteProjectFocus.mockClear();
     mockState.projects = [
       {
         id: "project-1",
@@ -151,6 +220,7 @@ describe("project repository helpers", () => {
       },
     ];
     mockState.taskRows = [];
+    mockState.focusRows = [];
   });
 
   it("sanitizes labels to compact name/color objects", () => {
@@ -241,6 +311,55 @@ describe("project repository helpers", () => {
     expect(mockState.updateProject).toHaveBeenCalledTimes(2);
     expect(mockState.updateProject.mock.calls[0][0]).toMatchObject({ archived_at: expect.any(String) });
     expect(mockState.updateProject.mock.calls[1][0]).toMatchObject({ archived_at: null });
+  });
+
+  it("adds, lists, removes, and completes focused project tasks for My Day", async () => {
+    mockState.taskRows = [
+      {
+        id: "task-1",
+        project_id: "project-1",
+        parent_task_id: null,
+        title: "Project task",
+        description: null,
+        status: "todo",
+        position: 1000,
+        due_date: null,
+        labels: [],
+        archived_at: null,
+        created_at: "2026-05-30T00:00:00Z",
+        updated_at: "2026-05-30T00:00:00Z",
+      },
+    ];
+    mockState.focusRows = [
+      {
+        id: "focus-1",
+        user_id: "user-1",
+        project_task_id: "task-1",
+        lane: "today",
+        my_day_order: null,
+        created_at: "2026-06-01T00:00:00Z",
+        updated_at: "2026-06-01T00:00:00Z",
+      },
+    ];
+
+    await expect(addProjectTaskFocus("user-1", "task-1")).resolves.toMatchObject({
+      project_task_id: "task-1",
+      lane: "today",
+    });
+
+    await expect(listFocusedProjectTasks("user-1")).resolves.toMatchObject([
+      {
+        focus: { project_task_id: "task-1" },
+        project: { id: "project-1", name: "Project" },
+        task: { id: "task-1", title: "Project task" },
+      },
+    ]);
+
+    await removeProjectTaskFocus("user-1", "task-1");
+    expect(mockState.deleteProjectFocus).toHaveBeenCalled();
+
+    await completeFocusedProjectTask("user-1", "task-1");
+    expect(mockState.updateProjectTask).toHaveBeenCalledWith(expect.objectContaining({ status: "done" }));
   });
 
   it("builds top-level task nodes with subtasks and checklists", () => {

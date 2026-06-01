@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireHardcodedSession } from "@/lib/auth/session";
 import { resolveSessionUserId } from "@/lib/auth/session-user";
 import type { InboxItem } from "@/lib/items/types";
+import { listFocusedProjectTasks } from "@/lib/projects/repository";
 import { MyDayClient } from "./my-day-client";
 
 function normalizeItemTags(item: InboxItem): InboxItem {
@@ -66,6 +67,7 @@ export default async function MyDayPage() {
     .gte("updated_at", today + "T00:00:00Z");
 
   const completedCount = completedToday?.length ?? 0;
+  const focusedProjectTasks = await listFocusedProjectTasks(userId);
 
   return (
     <MyDayClient
@@ -74,6 +76,7 @@ export default async function MyDayPage() {
       overdueItems={overdueItems}
       staleItems={staleItems}
       completedTodayCount={completedCount}
+      focusedProjectTasks={focusedProjectTasks}
     />
   );
 }

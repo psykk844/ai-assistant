@@ -7,6 +7,7 @@ import {
   projectStatusTabs,
   updateMobileProjectChecklistItem,
   updateMobileProjectTask,
+  updateMobileProjectTaskFocus,
 } from "../../lib/projects-api";
 import type {
   MobileProjectBoardPayload,
@@ -188,6 +189,21 @@ export default function ProjectTaskDetailScreen() {
     }
   }
 
+  async function handleAddToToday(taskToFocus = task) {
+    if (!taskToFocus || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
+    try {
+      await updateMobileProjectTaskFocus(taskToFocus.project_id, taskToFocus.id, true);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Failed to add task to Today.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -222,6 +238,15 @@ export default function ProjectTaskDetailScreen() {
 
               <Pressable accessibilityRole="button" disabled={saving} onPress={handleSaveText} style={styles.saveButton}>
                 <Text style={styles.saveButtonText}>{saving ? "Saving..." : "Save text"}</Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                disabled={saving || task.status === "done"}
+                onPress={() => handleAddToToday(task)}
+                style={[styles.focusButton, (saving || task.status === "done") && styles.disabledChip]}
+              >
+                <Text style={styles.focusButtonText}>Add to Today</Text>
               </Pressable>
 
               <Text style={styles.label}>Status</Text>
@@ -283,8 +308,20 @@ export default function ProjectTaskDetailScreen() {
                     {task.subtasks.length ? (
                       task.subtasks.map((subtask) => (
                         <View key={subtask.id} style={styles.subtaskRow}>
-                          <Text style={styles.subtaskTitle}>{subtask.title}</Text>
-                          <Text style={styles.subtaskMeta}>{subtask.status}</Text>
+                          <View style={styles.subtaskHeader}>
+                            <View style={styles.subtaskTextWrap}>
+                              <Text style={styles.subtaskTitle}>{subtask.title}</Text>
+                              <Text style={styles.subtaskMeta}>{subtask.status}</Text>
+                            </View>
+                            <Pressable
+                              accessibilityRole="button"
+                              disabled={saving || subtask.status === "done"}
+                              onPress={() => handleAddToToday(subtask)}
+                              style={[styles.subtaskFocusButton, (saving || subtask.status === "done") && styles.disabledChip]}
+                            >
+                              <Text style={styles.subtaskFocusButtonText}>Today</Text>
+                            </Pressable>
+                          </View>
                         </View>
                       ))
                     ) : (
@@ -386,6 +423,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
   },
+  focusButton: {
+    alignSelf: "flex-start",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  focusButtonText: {
+    color: "#334155",
+    fontSize: 14,
+    fontWeight: "800",
+  },
   chipRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -470,6 +521,15 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     gap: 3,
   },
+  subtaskHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  subtaskTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
   subtaskTitle: {
     color: "#111827",
     fontSize: 15,
@@ -480,6 +540,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
     textTransform: "uppercase",
+  },
+  subtaskFocusButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  subtaskFocusButtonText: {
+    color: "#334155",
+    fontSize: 12,
+    fontWeight: "800",
   },
   errorText: {
     color: "#b91c1c",

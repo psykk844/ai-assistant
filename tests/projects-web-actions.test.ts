@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectAreaFromForm, projectArchivePatchFromForm, projectTaskMovePatchFromForm } from "../app/projects/actions";
+import { projectAreaFromForm, projectArchivePatchFromForm, projectTaskFocusPatchFromForm, projectTaskMovePatchFromForm } from "../app/projects/actions";
 import { positionForProjectDrop } from "../app/projects/project-drop-position";
 
 describe("project web actions", () => {
@@ -36,6 +36,14 @@ describe("project web actions", () => {
       projectId: "project-1",
     });
     expect(() => projectArchivePatchFromForm(new FormData())).toThrow("Project id is required");
+  });
+
+  it("parses project task focus forms", () => {
+    const form = new FormData();
+    form.set("taskId", "task-1");
+
+    expect(projectTaskFocusPatchFromForm(form)).toEqual({ taskId: "task-1" });
+    expect(() => projectTaskFocusPatchFromForm(new FormData())).toThrow("Task id is required");
   });
 
   it("parses a valid drag/drop move form", () => {

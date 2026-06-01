@@ -57,6 +57,19 @@ test("projects kanban web flow stays isolated from inbox todos", async ({ page }
   await expect(page.getByText("Checklist 1/1").first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("Subtasks 0/1").first()).toBeVisible();
 
+  await page.getByRole("button", { name: `Open ${taskName}` }).click();
+  await expect(page.getByText("Task detail").first()).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Add to Today" }).click();
+  await page.goto(new URL("/app/my-day", baseUrl).toString(), { waitUntil: "domcontentloaded" });
+  await expect(page.getByText(taskName).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/Project: Delivery/).first()).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: `Complete project task ${taskName}` }).click();
+  await expect(page.getByText(taskName)).toHaveCount(0, { timeout: 20_000 });
+
+  await page.goto(new URL("/projects?area=delivery", baseUrl).toString(), { waitUntil: "domcontentloaded" });
+  await page.getByRole("link", { name: new RegExp(projectName) }).click();
+  await expect(page.locator("section").filter({ hasText: /^Done/ }).getByText(taskName).first()).toBeVisible({ timeout: 20_000 });
+
   await page.goto(new URL("/app", baseUrl).toString(), { waitUntil: "domcontentloaded" });
   await expect(page.getByText(taskName)).toHaveCount(0);
 
@@ -75,8 +88,9 @@ test("projects kanban web flow stays isolated from inbox todos", async ({ page }
   await page.getByRole("link", { name: "Delivery" }).click();
   await expect(page).toHaveURL(/area=delivery/);
   await expect(page).toHaveURL(/archived=1/);
-  await expect(page.getByRole("link", { name: new RegExp(projectName) })).toBeVisible({ timeout: 20_000 });
-  await page.locator("div").filter({ has: page.getByRole("link", { name: new RegExp(projectName) }) }).getByRole("button", { name: "Restore" }).first().click();
+  const archivedProjectLink = page.getByRole("link", { name: new RegExp(projectName) });
+  await expect(archivedProjectLink).toBeVisible({ timeout: 20_000 });
+  await archivedProjectLink.locator("xpath=ancestor::div[1]").getByRole("button", { name: "Restore" }).click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible({ timeout: 20_000 });
   await expect(page).not.toHaveURL(/archived=1/);
 

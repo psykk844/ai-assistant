@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { buildMobileHomePayload } from "@/lib/items/mobile-contracts";
+import { listFocusedProjectTasks } from "@/lib/projects/repository";
 import { mobileCorsPreflightResponse, normalizeItemTags, requireMobileApiUser, unauthorizedResponse, withMobileCors } from "../_shared";
 import type { InboxItem } from "@/lib/items/types";
 
@@ -30,5 +31,6 @@ export async function GET(request: Request) {
   }
 
   const items = ((data ?? []) as Array<Omit<InboxItem, "tags"> & { tags?: string[] | null }>).map(normalizeItemTags);
-  return withMobileCors(NextResponse.json(buildMobileHomePayload(items)), request);
+  const focusedProjectTasks = await listFocusedProjectTasks(auth.userId);
+  return withMobileCors(NextResponse.json(buildMobileHomePayload(items, focusedProjectTasks)), request);
 }

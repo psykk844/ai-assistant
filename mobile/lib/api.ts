@@ -211,6 +211,15 @@ export async function completeItem(itemId: string): Promise<void> {
   }
 }
 
+export async function completeFocusedProjectTask(projectId: string, taskId: string): Promise<void> {
+  if (canUseBackendApi()) {
+    await requestMobileApi(`/api/mobile/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "done", focusedToday: false }),
+    });
+  }
+}
+
 export async function moveItemToLane(itemId: string, lane: LaneKey): Promise<void> {
   if (canUseBackendApi()) {
     await requestMobileApi<{ ok: boolean }>(`/api/mobile/items/${itemId}/move`, {

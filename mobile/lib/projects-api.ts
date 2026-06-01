@@ -289,6 +289,20 @@ export async function updateMobileProjectTask(projectId: string, taskId: string,
   return updated ? { ok: true } : { ok: false };
 }
 
+export async function updateMobileProjectTaskFocus(projectId: string, taskId: string, focusedToday: boolean) {
+  if (canUseBackendApi()) {
+    return requestProjectsApi(
+      `/api/mobile/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ focusedToday }),
+      },
+    );
+  }
+
+  return { ok: true };
+}
+
 export async function updateMobileProjectChecklistItem(
   projectId: string,
   taskId: string,

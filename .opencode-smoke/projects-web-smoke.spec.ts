@@ -47,7 +47,7 @@ test("projects kanban web flow stays isolated from inbox todos", async ({ page }
     await expect(page.getByText("Task detail").first()).toBeVisible({ timeout: 1_000 });
   }).toPass({ timeout: 10_000 });
 
-  await page.locator("select").selectOption("doing");
+  await page.getByRole("combobox", { name: "Status" }).selectOption("doing");
   await expect(page.getByText("Saved.").first()).toBeVisible({ timeout: 20_000 });
 
   await page.getByPlaceholder("Add checklist item").fill(checklistName);

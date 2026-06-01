@@ -63,4 +63,4 @@
 - [x] Run `npm --prefix mobile run typecheck`.
 - [x] Run `npm run lint`.
 - [x] Run `npm run build`.
-- [ ] Commit, push, deploy web/mobile, run production Projects smoke, and update handoff docs.
+- [x] Commit, push, deploy web/mobile, run production Projects smoke, and update handoff docs.

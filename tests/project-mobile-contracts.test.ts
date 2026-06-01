@@ -7,6 +7,7 @@ import {
   projectAreaTabs,
   projectStatusTabs,
   resetMockProjectBoard,
+  resolveMobileProjectSelection,
   updateMobileProjectArchive,
   updateMobileProjectChecklistItem,
   updateMobileProjectTask,
@@ -56,6 +57,14 @@ describe("mobile project contracts", () => {
     expect(board.activeProject).toBeNull();
     expect(board.projects.map((project) => project.area)).toEqual(["demand", "delivery", "personal"]);
     expect(board.tasks[0].project).toMatchObject({ area: "demand", name: "Mobile Project" });
+  });
+
+  it("keeps mobile All projects unscoped instead of auto-selecting the first project", async () => {
+    const board = await getMobileProjectBoard();
+    const deliveryBoard = await getMobileProjectBoard(null, "delivery");
+
+    expect(resolveMobileProjectSelection(board, "all")).toBeNull();
+    expect(resolveMobileProjectSelection(deliveryBoard, "delivery")).toBe("project-mobile-delivery");
   });
 
   it("filters the mock board by project area", async () => {

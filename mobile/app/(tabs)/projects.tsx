@@ -7,6 +7,7 @@ import {
   getMobileProjectBoard,
   projectAreaTabs,
   projectStatusTabs,
+  resolveMobileProjectSelection,
   updateMobileProjectArchive,
   updateMobileProjectTask,
 } from "../../lib/projects-api";
@@ -41,7 +42,7 @@ export default function ProjectsScreen() {
         const payload = await getMobileProjectBoard(selectedProjectId, selectedArea, selectedArchived);
         if (!active) return;
         setBoard(payload);
-        setSelectedProjectId(payload.activeProject?.id ?? payload.projects[0]?.id ?? null);
+        setSelectedProjectId(resolveMobileProjectSelection(payload, selectedArea));
       } catch (loadError) {
         if (active) setError(loadError instanceof Error ? loadError.message : "Failed to load projects.");
       } finally {
@@ -82,7 +83,7 @@ export default function ProjectsScreen() {
       await updateMobileProjectArchive(board.activeProject.id, archived);
       const payload = await getMobileProjectBoard(null, selectedArea, selectedArchived);
       setBoard(payload);
-      setSelectedProjectId(payload.activeProject?.id ?? payload.projects[0]?.id ?? null);
+      setSelectedProjectId(resolveMobileProjectSelection(payload, selectedArea));
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to update project.");
     } finally {

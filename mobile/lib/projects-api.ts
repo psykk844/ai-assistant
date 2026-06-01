@@ -30,6 +30,10 @@ export function projectStatusTabs(): ProjectStatusTab[] {
   ];
 }
 
+export function resolveMobileProjectSelection(board: MobileProjectBoardPayload, area: MobileProjectAreaFilter) {
+  return board.activeProject?.id ?? (area === "all" ? null : board.projects[0]?.id ?? null);
+}
+
 export function getMobileDevKey() {
   return process.env.EXPO_PUBLIC_MOBILE_DEV_API_KEY?.trim() ?? "";
 }

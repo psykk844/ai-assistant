@@ -2,11 +2,33 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const DEFAULT_HARDCODED_EMAIL = "sam@local.dev";
 
+async function inferExistingAppUserId(admin: ReturnType<typeof createAdminClient>) {
+  for (const table of ["items", "projects"]) {
+    const { data, error } = await admin
+      .from(table)
+      .select("user_id")
+      .order("updated_at", { ascending: false })
+      .limit(1);
+
+    if (error) continue;
+    const userId = data?.[0]?.user_id;
+    if (typeof userId === "string" && userId.trim()) return userId;
+  }
+
+  return null;
+}
+
 export async function resolveSessionUserId() {
-  const configuredUserId = process.env.MOBILE_DEV_USER_ID?.trim() || process.env.HARDCODED_USER_ID?.trim();
+  const configuredUserId =
+    process.env.MOBILE_DEV_USER_ID?.trim() ||
+    process.env.HARDCODED_USER_ID?.trim() ||
+    process.env.DEFAULT_USER_ID?.trim();
   if (configuredUserId) return configuredUserId;
 
   const admin = createAdminClient();
+  const existingAppUserId = await inferExistingAppUserId(admin);
+  if (existingAppUserId) return existingAppUserId;
+
   const hardcodedEmail = process.env.HARDCODED_EMAIL?.trim() || DEFAULT_HARDCODED_EMAIL;
 
   const { data: usersData, error: usersError } = await admin.auth.admin.listUsers({

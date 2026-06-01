@@ -60,6 +60,7 @@ test("projects kanban web flow stays isolated from inbox todos", async ({ page }
   await page.getByRole("button", { name: `Open ${taskName}` }).click();
   await expect(page.getByText("Task detail").first()).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "Add to Today" }).click();
+  await expect(page.getByText("Added to Today.").first()).toBeVisible({ timeout: 20_000 });
   await page.goto(new URL("/app/my-day", baseUrl).toString(), { waitUntil: "domcontentloaded" });
   await expect(page.getByText(taskName).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(/Project: Delivery/).first()).toBeVisible({ timeout: 20_000 });

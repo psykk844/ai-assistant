@@ -60,6 +60,8 @@ export default function ProjectTaskDetailScreen() {
   const [statusSaving, setStatusSaving] = useState(false);
   const [pendingChecklistItemIds, setPendingChecklistItemIds] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
+  const [focusMessage, setFocusMessage] = useState<string | null>(null);
+  const [focusedTaskIds, setFocusedTaskIds] = useState<Set<string>>(() => new Set());
   const [titleDraft, setTitleDraft] = useState("");
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const statusSavingRef = useRef(false);
@@ -79,6 +81,8 @@ export default function ProjectTaskDetailScreen() {
         setBoard(payload);
         setTitleDraft(task?.title ?? "");
         setDescriptionDraft(task?.description ?? "");
+        setFocusMessage(null);
+        setFocusedTaskIds(new Set());
       } catch (loadError) {
         if (active) setError(loadError instanceof Error ? loadError.message : "Failed to load project task.");
       } finally {
@@ -194,8 +198,11 @@ export default function ProjectTaskDetailScreen() {
     savingRef.current = true;
     setSaving(true);
     setError(null);
+    setFocusMessage(null);
     try {
       await updateMobileProjectTaskFocus(taskToFocus.project_id, taskToFocus.id, true);
+      setFocusedTaskIds((current) => new Set(current).add(taskToFocus.id));
+      setFocusMessage("Added to Today.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to add task to Today.");
     } finally {
@@ -242,12 +249,15 @@ export default function ProjectTaskDetailScreen() {
 
               <Pressable
                 accessibilityRole="button"
-                disabled={saving || task.status === "done"}
+                disabled={saving || task.status === "done" || focusedTaskIds.has(task.id)}
                 onPress={() => handleAddToToday(task)}
-                style={[styles.focusButton, (saving || task.status === "done") && styles.disabledChip]}
+                style={[styles.focusButton, (saving || task.status === "done" || focusedTaskIds.has(task.id)) && styles.disabledChip]}
               >
-                <Text style={styles.focusButtonText}>Add to Today</Text>
+                <Text style={styles.focusButtonText}>
+                  {focusedTaskIds.has(task.id) ? "Added to Today" : saving ? "Adding..." : "Add to Today"}
+                </Text>
               </Pressable>
+              {focusMessage ? <Text style={styles.focusMessage}>{focusMessage}</Text> : null}
 
               <Text style={styles.label}>Status</Text>
               <View style={styles.chipRow}>
@@ -315,11 +325,16 @@ export default function ProjectTaskDetailScreen() {
                             </View>
                             <Pressable
                               accessibilityRole="button"
-                              disabled={saving || subtask.status === "done"}
+                              disabled={saving || subtask.status === "done" || focusedTaskIds.has(subtask.id)}
                               onPress={() => handleAddToToday(subtask)}
-                              style={[styles.subtaskFocusButton, (saving || subtask.status === "done") && styles.disabledChip]}
+                              style={[
+                                styles.subtaskFocusButton,
+                                (saving || subtask.status === "done" || focusedTaskIds.has(subtask.id)) && styles.disabledChip,
+                              ]}
                             >
-                              <Text style={styles.subtaskFocusButtonText}>Today</Text>
+                              <Text style={styles.subtaskFocusButtonText}>
+                                {focusedTaskIds.has(subtask.id) ? "Added" : saving ? "Adding..." : "Today"}
+                              </Text>
                             </Pressable>
                           </View>
                         </View>
@@ -435,6 +450,11 @@ const styles = StyleSheet.create({
   focusButtonText: {
     color: "#334155",
     fontSize: 14,
+    fontWeight: "800",
+  },
+  focusMessage: {
+    color: "#15803d",
+    fontSize: 13,
     fontWeight: "800",
   },
   chipRow: {

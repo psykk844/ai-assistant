@@ -30,6 +30,7 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
   const [subtaskTitle, setSubtaskTitle] = useState("");
   const [mutationMessage, setMutationMessage] = useState<{ tone: "error" | "info"; text: string } | null>(null);
   const [checklistOverrides, setChecklistOverrides] = useState<Record<string, boolean>>({});
+  const [focusedTaskIds, setFocusedTaskIds] = useState<Set<string>>(() => new Set());
   const previousTaskId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -43,7 +44,10 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
     setDueDate(task?.due_date ?? "");
     setChecklistTitle("");
     setSubtaskTitle("");
-    if (taskChanged) setMutationMessage(null);
+    if (taskChanged) {
+      setMutationMessage(null);
+      setFocusedTaskIds(new Set());
+    }
     setChecklistOverrides((current) => {
       if (taskChanged || !task) return {};
 
@@ -75,14 +79,14 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
 
   function runMutation(
     action: () => Promise<void>,
-    options: { onSuccess?: () => void; onFailure?: () => void; failureMessage?: string } = {},
+    options: { onSuccess?: () => void; onFailure?: () => void; successMessage?: string; failureMessage?: string } = {},
   ) {
     startTransition(async () => {
       setMutationMessage(null);
       try {
         await action();
         options.onSuccess?.();
-        setMutationMessage({ tone: "info", text: "Saved." });
+        setMutationMessage({ tone: "info", text: options.successMessage ?? "Saved." });
         router.refresh();
       } catch (error) {
         resetEditableFields(currentTask);
@@ -145,6 +149,17 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
       onClose();
     }, {
       failureMessage: "Could not archive task. Please try again.",
+    });
+  }
+
+  function handleAddToToday(taskId: string) {
+    const formData = new FormData();
+    formData.set("taskId", taskId);
+
+    runMutation(() => addProjectTaskFocusAction(formData), {
+      onSuccess: () => setFocusedTaskIds((current) => new Set(current).add(taskId)),
+      successMessage: "Added to Today.",
+      failureMessage: "Could not add to Today. Please try again.",
     });
   }
 
@@ -304,16 +319,14 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
                     <p className="text-sm font-medium">{subtask.title}</p>
                     <p className="mt-1 text-xs text-[var(--text-muted)]">{statusLabel(subtask.status)}</p>
                   </div>
-                  <form action={addProjectTaskFocusAction}>
-                    <input type="hidden" name="taskId" value={subtask.id} />
-                    <button
-                      type="submit"
-                      className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
-                      disabled={isPending || subtask.status === "done"}
-                    >
-                      Today
-                    </button>
-                  </form>
+                  <button
+                    type="button"
+                    onClick={() => handleAddToToday(subtask.id)}
+                    className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
+                    disabled={isPending || subtask.status === "done" || focusedTaskIds.has(subtask.id)}
+                  >
+                    {focusedTaskIds.has(subtask.id) ? "Added" : isPending ? "Adding..." : "Today"}
+                  </button>
                 </div>
               </div>
             ))
@@ -339,16 +352,14 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
       </section>
 
       <div className="mt-6 grid grid-cols-2 gap-3">
-        <form action={addProjectTaskFocusAction}>
-          <input type="hidden" name="taskId" value={currentTask.id} />
-          <button
-            type="submit"
-            className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-sm font-medium text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
-            disabled={isPending || currentTask.status === "done"}
-          >
-            Add to Today
-          </button>
-        </form>
+        <button
+          type="button"
+          onClick={() => handleAddToToday(currentTask.id)}
+          className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-sm font-medium text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
+          disabled={isPending || currentTask.status === "done" || focusedTaskIds.has(currentTask.id)}
+        >
+          {focusedTaskIds.has(currentTask.id) ? "Added to Today" : isPending ? "Adding..." : "Add to Today"}
+        </button>
         <button
           type="button"
           onClick={handleArchive}

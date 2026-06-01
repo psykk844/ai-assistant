@@ -29,7 +29,12 @@ export function nextTaskPosition(tasks: Array<{ position: number }>) {
   return Math.max(0, ...tasks.map((task) => task.position)) + 1000;
 }
 
-export function buildProjectTaskNodes(tasks: ProjectTask[], checklistItems: ProjectChecklistItem[]): ProjectTaskNode[] {
+export function buildProjectTaskNodes(
+  tasks: ProjectTask[],
+  checklistItems: ProjectChecklistItem[],
+  projects: Project[] = [],
+): ProjectTaskNode[] {
+  const projectById = new Map(projects.map((project) => [project.id, project]));
   const checklistByTask = new Map<string, ProjectChecklistItem[]>();
   for (const item of checklistItems) {
     const list = checklistByTask.get(item.task_id) ?? [];
@@ -57,11 +62,18 @@ export function buildProjectTaskNodes(tasks: ProjectTask[], checklistItems: Proj
   roots.sort(compareProjectTaskPositions);
   for (const children of childrenByParent.values()) children.sort(compareProjectTaskPositions);
 
+  const taskProject = (task: ProjectTask) => {
+    const project = projectById.get(task.project_id);
+    return project ? { id: project.id, area: project.area, name: project.name } : undefined;
+  };
+
   return roots.map((task) => ({
     ...task,
+    project: taskProject(task),
     checklist: checklistByTask.get(task.id) ?? [],
     subtasks: (childrenByParent.get(task.id) ?? []).map((subtask) => ({
       ...subtask,
+      project: taskProject(subtask),
       checklist: checklistByTask.get(subtask.id) ?? [],
     })),
   }));
@@ -118,21 +130,28 @@ export async function loadProjectBoard(
   options: { archived?: boolean } = {},
 ) {
   const projects = await listProjects(userId, area ?? null, options);
-  const activeProject = projectId
+  const allAreasBoard = !projectId && !area;
+  const activeProject = allAreasBoard
+    ? null
+    : projectId
     ? projects.find((project) => project.id === projectId) ?? projects[0] ?? null
     : projects[0] ?? null;
 
-  if (!activeProject) return { projects, activeProject: null, tasks: [] };
+  if (!activeProject && !allAreasBoard) return { projects, activeProject: null, tasks: [] };
+  const projectIds = activeProject ? [activeProject.id] : projects.map((project) => project.id);
+  if (projectIds.length === 0) return { projects, activeProject: null, tasks: [] };
 
   const supabase = createAdminClient();
-  const { data: taskRows, error: taskError } = await supabase
+  let taskQuery = supabase
     .from("project_tasks")
     .select(TASK_COLUMNS)
     .eq("user_id", userId)
-    .eq("project_id", activeProject.id)
     .is("archived_at", null)
     .order("position", { ascending: true })
     .order("created_at", { ascending: true });
+
+  taskQuery = activeProject ? taskQuery.eq("project_id", activeProject.id) : taskQuery.in("project_id", projectIds);
+  const { data: taskRows, error: taskError } = await taskQuery;
 
   if (taskError) throw new Error(`Failed to load project tasks: ${taskError.message}`);
 
@@ -157,7 +176,7 @@ export async function loadProjectBoard(
   return {
     projects,
     activeProject,
-    tasks: buildProjectTaskNodes(tasks, (checklistRows ?? []) as ProjectChecklistItem[]),
+    tasks: buildProjectTaskNodes(tasks, (checklistRows ?? []) as ProjectChecklistItem[], projects),
   };
 }
 

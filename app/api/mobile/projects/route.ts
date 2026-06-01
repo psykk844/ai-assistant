@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   const area = params.get("area");
   const archived = params.get("archived") === "1";
   try {
-    const board = await loadProjectBoard(auth.userId, projectId, isProjectArea(area) ? area : "demand", { archived });
+    const board = await loadProjectBoard(auth.userId, projectId, isProjectArea(area) ? area : null, { archived });
     if (projectId && routeProjectMissing(board, projectId)) {
       return mobileJsonError(request, 404, "not found");
     }

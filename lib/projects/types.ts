@@ -44,7 +44,8 @@ export type ProjectTask = {
 
 export type ProjectTaskNode = ProjectTask & {
   checklist: ProjectChecklistItem[];
-  subtasks: Array<ProjectTask & { checklist: ProjectChecklistItem[] }>;
+  subtasks: Array<ProjectTask & { checklist: ProjectChecklistItem[]; project?: Pick<Project, "id" | "area" | "name"> }>;
+  project?: Pick<Project, "id" | "area" | "name">;
 };
 
 export type ProjectTaskFocus = {

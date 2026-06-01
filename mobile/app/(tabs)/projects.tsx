@@ -11,7 +11,7 @@ import {
   updateMobileProjectTask,
 } from "../../lib/projects-api";
 import type {
-  MobileProjectArea,
+  MobileProjectAreaFilter,
   MobileProjectBoardPayload,
   MobileProjectTask,
   MobileProjectTaskStatus,
@@ -19,7 +19,7 @@ import type {
 
 export default function ProjectsScreen() {
   const [board, setBoard] = useState<MobileProjectBoardPayload | null>(null);
-  const [selectedArea, setSelectedArea] = useState<MobileProjectArea>("demand");
+  const [selectedArea, setSelectedArea] = useState<MobileProjectAreaFilter>("all");
   const [selectedArchived, setSelectedArchived] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<MobileProjectTaskStatus>("todo");
@@ -64,7 +64,7 @@ export default function ProjectsScreen() {
     setSelectedProjectId(projectId);
   }
 
-  function handleAreaSelect(area: MobileProjectArea) {
+  function handleAreaSelect(area: MobileProjectAreaFilter) {
     setSelectedArea(area);
     setSelectedProjectId(null);
   }
@@ -157,7 +157,7 @@ export default function ProjectsScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.card}>
           <Text style={styles.eyebrow}>Project board</Text>
-          <Text style={styles.title}>Projects</Text>
+          <Text style={styles.title}>{selectedArea === "all" ? "All Projects" : "Projects"}</Text>
 
           {loading ? (
             <View style={styles.loadingWrap}>

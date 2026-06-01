@@ -1,5 +1,6 @@
 export type MobileProjectTaskStatus = "backlog" | "todo" | "doing" | "waiting" | "done";
 export type MobileProjectArea = "demand" | "delivery" | "personal";
+export type MobileProjectAreaFilter = "all" | MobileProjectArea;
 
 export type MobileProjectLabel = { name: string; color: string };
 export type MobileProject = {
@@ -23,6 +24,7 @@ export type MobileProjectSubtask = {
   due_date: string | null;
   labels: MobileProjectLabel[];
   checklist: MobileProjectChecklistItem[];
+  project?: Pick<MobileProject, "id" | "area" | "name">;
 };
 
 export type MobileProjectTask = {
@@ -37,6 +39,7 @@ export type MobileProjectTask = {
   labels: MobileProjectLabel[];
   checklist: MobileProjectChecklistItem[];
   subtasks: MobileProjectSubtask[];
+  project?: Pick<MobileProject, "id" | "area" | "name">;
 };
 
 export type MobileProjectBoardPayload = {

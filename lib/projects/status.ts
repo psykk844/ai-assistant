@@ -1,5 +1,5 @@
 export const PROJECT_AREA_ORDER = ["demand", "delivery", "personal"] as const;
-export const PROJECT_STATUS_ORDER = ["backlog", "todo", "doing", "waiting", "done"] as const;
+export const PROJECT_STATUS_ORDER = ["todo", "doing", "backlog", "waiting", "done"] as const;
 
 export type ProjectArea = (typeof PROJECT_AREA_ORDER)[number];
 export type ProjectTaskStatus = (typeof PROJECT_STATUS_ORDER)[number];
@@ -23,9 +23,9 @@ export function areaLabel(area: ProjectArea) {
 
 export function statusLabel(status: ProjectTaskStatus) {
   const labels: Record<ProjectTaskStatus, string> = {
-    backlog: "Backlog",
-    todo: "To Do",
-    doing: "Doing",
+    todo: "Today",
+    doing: "Next",
+    backlog: "Later",
     waiting: "Waiting",
     done: "Done",
   };

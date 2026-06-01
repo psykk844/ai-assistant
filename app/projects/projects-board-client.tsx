@@ -35,7 +35,7 @@ import { TaskDetailDrawer } from "./task-detail-drawer";
 
 type ProjectsBoardClientProps = {
   initialArchived: boolean;
-  initialArea: ProjectArea;
+  initialArea: ProjectArea | null;
   initialBoard: ProjectBoard;
 };
 
@@ -50,6 +50,39 @@ function statusTone(status: ProjectTaskStatus) {
   return tones[status];
 }
 
+function areaTone(area: ProjectArea) {
+  const tones: Record<ProjectArea, { border: string; bg: string; text: string; dot: string }> = {
+    demand: {
+      border: "border-rose-300/35",
+      bg: "bg-rose-300/10",
+      text: "text-rose-100",
+      dot: "#fb7185",
+    },
+    delivery: {
+      border: "border-sky-300/35",
+      bg: "bg-sky-300/10",
+      text: "text-sky-100",
+      dot: "#38bdf8",
+    },
+    personal: {
+      border: "border-emerald-300/35",
+      bg: "bg-emerald-300/10",
+      text: "text-emerald-100",
+      dot: "#34d399",
+    },
+  };
+  return tones[area];
+}
+
+function projectsHref(params: { area?: ProjectArea | null; archived?: boolean; projectId?: string | null }) {
+  const search = new URLSearchParams();
+  if (params.area) search.set("area", params.area);
+  if (params.archived) search.set("archived", "1");
+  if (params.projectId) search.set("project", params.projectId);
+  const query = search.toString();
+  return query ? `/projects?${query}` : "/projects";
+}
+
 function isStatusDropId(value: string): value is `status:${ProjectTaskStatus}` {
   return PROJECT_STATUS_ORDER.some((status) => value === `status:${status}`);
 }
@@ -62,6 +95,8 @@ function filterTasks(tasks: ProjectTaskNode[], query: string) {
     const haystack = [
       task.title,
       task.description ?? "",
+      task.project?.name ?? "",
+      task.project ? areaLabel(task.project.area) : "",
       task.labels.map((label) => label.name).join(" "),
       task.subtasks.map((subtask) => subtask.title).join(" "),
       task.checklist.map((item) => item.title).join(" "),
@@ -190,11 +225,21 @@ export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard
               </a>
             </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-1 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] p-1">
+            <div className="mt-4 grid grid-cols-4 gap-1 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] p-1">
+              <a
+                href={projectsHref({ archived: initialArchived })}
+                className={`rounded-md px-2 py-2 text-center text-xs font-medium transition ${
+                  initialArea === null
+                    ? "bg-[var(--accent)] text-black"
+                    : "text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]"
+                }`}
+              >
+                All
+              </a>
               {PROJECT_AREA_ORDER.map((area) => (
                 <a
                   key={area}
-                  href={`/projects?area=${encodeURIComponent(area)}${initialArchived ? "&archived=1" : ""}`}
+                  href={projectsHref({ area, archived: initialArchived })}
                   className={`rounded-md px-2 py-2 text-center text-xs font-medium transition ${
                     area === initialArea
                       ? "bg-[var(--accent)] text-black"
@@ -208,7 +253,7 @@ export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard
 
             <div className="mt-3 grid grid-cols-2 gap-2">
               <a
-                href={`/projects?area=${encodeURIComponent(initialArea)}`}
+                href={projectsHref({ area: initialArea })}
                 className={`rounded-lg border px-3 py-2 text-center text-xs font-medium transition ${
                   !initialArchived
                     ? "border-[var(--accent)] text-[var(--text)]"
@@ -218,7 +263,7 @@ export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard
                 Active
               </a>
               <a
-                href={`/projects?area=${encodeURIComponent(initialArea)}&archived=1`}
+                href={projectsHref({ area: initialArea, archived: true })}
                 className={`rounded-lg border px-3 py-2 text-center text-xs font-medium transition ${
                   initialArchived
                     ? "border-[var(--accent)] text-[var(--text)]"
@@ -232,15 +277,13 @@ export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard
             <nav className="mt-4 space-y-2">
               {board.projects.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
-                  {initialArchived ? "No archived projects in this area." : "Add a project to start planning."}
+                  {initialArchived ? "No archived projects here." : "Add a project to start planning."}
                 </p>
               ) : (
                 board.projects.map((project) => (
                   <div key={project.id} className="rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] p-3">
                     <a
-                      href={`/projects?area=${encodeURIComponent(initialArea)}${
-                        initialArchived ? "&archived=1" : ""
-                      }&project=${encodeURIComponent(project.id)}`}
+                      href={projectsHref({ area: initialArea, archived: initialArchived, projectId: project.id })}
                       className={`block text-sm transition ${
                         project.id === activeProject?.id ? "text-[var(--text)]" : "text-[var(--text-muted)] hover:text-[var(--text)]"
                       }`}
@@ -251,7 +294,7 @@ export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard
                     {initialArchived && (
                       <form action={updateProjectArchiveAction} className="mt-3">
                         <input type="hidden" name="projectId" value={project.id} />
-                        <input type="hidden" name="area" value={initialArea} />
+                        <input type="hidden" name="area" value={project.area} />
                         <input type="hidden" name="archived" value="false" />
                         <button
                           type="submit"
@@ -269,7 +312,22 @@ export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard
             {!initialArchived && (
               <form action={createProjectAction} className="mt-5 space-y-2">
                 <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">Add project</p>
-                <input type="hidden" name="area" value={initialArea} />
+                {initialArea ? (
+                  <input type="hidden" name="area" value={initialArea} />
+                ) : (
+                  <select
+                    name="area"
+                    defaultValue="demand"
+                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                    aria-label="Project area"
+                  >
+                    {PROJECT_AREA_ORDER.map((area) => (
+                      <option key={area} value={area}>
+                        {areaLabel(area)}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <input
                   name="name"
                   placeholder="Project name"
@@ -297,7 +355,12 @@ export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard
               <div className="flex flex-wrap items-start gap-3">
                 <div>
                   <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">Project board</p>
-                  <h1 className="mt-2 text-2xl font-semibold">{activeProject?.name ?? "No project selected"}</h1>
+                  <h1 className="mt-2 text-2xl font-semibold">{activeProject?.name ?? "All projects"}</h1>
+                  {!activeProject && (
+                    <p className="mt-1 max-w-2xl text-sm text-[var(--text-muted)]">
+                      Demand, Delivery, and Personal tasks in one priority view. Select a project on the left to add new tasks.
+                    </p>
+                  )}
                   {activeProject?.description && (
                     <p className="mt-1 max-w-2xl text-sm text-[var(--text-muted)]">{activeProject.description}</p>
                   )}
@@ -315,7 +378,7 @@ export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard
                   {activeProject && !initialArchived && (
                     <form action={updateProjectArchiveAction}>
                       <input type="hidden" name="projectId" value={activeProject.id} />
-                      <input type="hidden" name="area" value={initialArea} />
+                      <input type="hidden" name="area" value={activeProject.area} />
                       <input type="hidden" name="archived" value="true" />
                       <button
                         type="submit"
@@ -354,14 +417,14 @@ export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard
               <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg-elevated)] p-8 text-center text-sm text-[var(--text-muted)]">
                 Select an archived project on the left and click Restore to bring it back.
               </div>
-            ) : activeProject ? (
+            ) : board.projects.length > 0 ? (
               <div className="grid gap-3 xl:grid-cols-5">
                 {PROJECT_STATUS_ORDER.map((status) => (
                   <ProjectStatusColumn
                     key={status}
                     status={status}
                     tasks={grouped[status]}
-                    projectId={activeProject.id}
+                    projectId={activeProject?.id ?? null}
                     pending={isPending}
                     onOpenTask={setSelectedTaskId}
                   />
@@ -377,7 +440,7 @@ export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard
       </DndContext>
       <TaskDetailDrawer
         task={selectedTask}
-        projectId={activeProject?.id ?? ""}
+        projectId={selectedTask?.project_id ?? activeProject?.id ?? ""}
         onClose={() => setSelectedTaskId(null)}
       />
     </main>
@@ -387,7 +450,7 @@ export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard
 type ProjectStatusColumnProps = {
   status: ProjectTaskStatus;
   tasks: ProjectTaskNode[];
-  projectId: string;
+  projectId: string | null;
   pending: boolean;
   onOpenTask: (taskId: string) => void;
 };
@@ -431,23 +494,29 @@ const ProjectStatusColumn = memo(function ProjectStatusColumn({
         )}
       </SortableContext>
 
-      <form action={createProjectTaskAction} className="mt-3 space-y-2">
-        <input type="hidden" name="projectId" value={projectId} />
-        <input type="hidden" name="status" value={status} />
-        <input
-          name="title"
-          placeholder={`Add to ${statusLabel(status)}`}
-          className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
-          required
-        />
-        <button
-          type="submit"
-          className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
-          disabled={pending}
-        >
-          Add task
-        </button>
-      </form>
+      {projectId ? (
+        <form action={createProjectTaskAction} className="mt-3 space-y-2">
+          <input type="hidden" name="projectId" value={projectId} />
+          <input type="hidden" name="status" value={status} />
+          <input
+            name="title"
+            placeholder={`Add to ${statusLabel(status)}`}
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+            required
+          />
+          <button
+            type="submit"
+            className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
+            disabled={pending}
+          >
+            Add task
+          </button>
+        </form>
+      ) : (
+        <p className="mt-3 rounded-lg border border-dashed border-[var(--border)] p-3 text-xs text-[var(--text-muted)]">
+          Select a project to add tasks.
+        </p>
+      )}
     </section>
   );
 });
@@ -462,6 +531,7 @@ const ProjectTaskCard = memo(function ProjectTaskCard({ task, pending, onOpenTas
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const checklist = checklistProgress(task.checklist);
   const subtasks = subtaskProgress(task);
+  const tone = task.project ? areaTone(task.project.area) : null;
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -476,8 +546,17 @@ const ProjectTaskCard = memo(function ProjectTaskCard({ task, pending, onOpenTas
       onClick={() => {
         if (!isDragging) onOpenTask(task.id);
       }}
-      className="rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] p-3 shadow-sm"
+      className={`rounded-lg border ${tone ? `${tone.border} ${tone.bg}` : "border-[var(--border)] bg-[var(--bg-muted)]"} p-3 shadow-sm`}
     >
+      {task.project && (
+        <div className="mb-2 flex items-center gap-2">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: tone?.dot }} />
+          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-mono uppercase ${tone?.border} ${tone?.text}`}>
+            {areaLabel(task.project.area)}
+          </span>
+          <span className="min-w-0 truncate text-xs text-[var(--text-muted)]">{task.project.name}</span>
+        </div>
+      )}
       <div className="flex items-start gap-2">
         <button
           type="button"

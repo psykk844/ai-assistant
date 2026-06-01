@@ -217,8 +217,12 @@ describe("mobile project routes", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
+    expect(body.activeProject).toBeNull();
     expect(body.projects[0].name).toBe("Todo App");
-    expect(body.tasks[0].id).toBe("task-1");
+    expect(body.tasks.map((task: { id: string; project?: { area: string } }) => [task.id, task.project?.area])).toEqual([
+      ["task-1", "demand"],
+      ["task-2", "delivery"],
+    ]);
   });
 
   it("filters mobile projects by area", async () => {

@@ -1,7 +1,7 @@
 import { type Href, useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { projectStatusTabs } from "../lib/projects-api";
-import type { MobileProjectSubtask, MobileProjectTask, MobileProjectTaskStatus } from "../lib/projects-types";
+import type { MobileProjectArea, MobileProjectSubtask, MobileProjectTask, MobileProjectTaskStatus } from "../lib/projects-types";
 
 type ProjectTaskRowProps = {
   task: MobileProjectTask | MobileProjectSubtask;
@@ -13,6 +13,18 @@ function checklistSummary(task: MobileProjectTask | MobileProjectSubtask) {
   if (!task.checklist.length) return "0 checks";
   const done = task.checklist.filter((item) => item.completed).length;
   return `${done}/${task.checklist.length} checks`;
+}
+
+function areaColor(area: MobileProjectArea) {
+  if (area === "demand") return "#e11d48";
+  if (area === "delivery") return "#0284c7";
+  return "#059669";
+}
+
+function areaLabel(area: MobileProjectArea) {
+  if (area === "demand") return "Demand";
+  if (area === "delivery") return "Delivery";
+  return "Personal";
 }
 
 export function ProjectTaskRow({ task, onStatusChange, statusDisabled = false }: ProjectTaskRowProps) {
@@ -27,6 +39,13 @@ export function ProjectTaskRow({ task, onStatusChange, statusDisabled = false }:
   return (
     <View style={styles.row}>
       <Pressable accessibilityRole="button" onPress={openDetail} style={styles.mainTapZone}>
+        {task.project ? (
+          <View style={styles.projectMetaRow}>
+            <View style={[styles.areaDot, { backgroundColor: areaColor(task.project.area) }]} />
+            <Text style={[styles.areaText, { color: areaColor(task.project.area) }]}>{areaLabel(task.project.area)}</Text>
+            <Text style={styles.projectText}>{task.project.name}</Text>
+          </View>
+        ) : null}
         <Text style={styles.title}>{task.title}</Text>
         <View style={styles.metaRow}>
           {task.due_date ? <Text style={styles.metaText}>Due {task.due_date}</Text> : null}
@@ -81,6 +100,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+  },
+  projectMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  areaDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  areaText: {
+    fontSize: 11,
+    fontWeight: "900",
+    textTransform: "uppercase",
+  },
+  projectText: {
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: "700",
   },
   metaText: {
     fontSize: 12,

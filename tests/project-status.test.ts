@@ -20,7 +20,7 @@ describe("project task statuses", () => {
   });
 
   it("uses the fixed v1 status order", () => {
-    expect(PROJECT_STATUS_ORDER).toEqual(["backlog", "todo", "doing", "waiting", "done"]);
+    expect(PROJECT_STATUS_ORDER).toEqual(["todo", "doing", "backlog", "waiting", "done"]);
   });
 
   it("validates status strings", () => {
@@ -31,9 +31,9 @@ describe("project task statuses", () => {
   });
 
   it("returns user-facing labels", () => {
-    expect(statusLabel("backlog")).toBe("Backlog");
-    expect(statusLabel("todo")).toBe("To Do");
-    expect(statusLabel("doing")).toBe("Doing");
+    expect(statusLabel("todo")).toBe("Today");
+    expect(statusLabel("doing")).toBe("Next");
+    expect(statusLabel("backlog")).toBe("Later");
     expect(statusLabel("waiting")).toBe("Waiting");
     expect(statusLabel("done")).toBe("Done");
   });

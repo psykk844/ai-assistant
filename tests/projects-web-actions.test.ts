@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { projectAreaFromForm, projectArchivePatchFromForm, projectTaskFocusPatchFromForm, projectTaskMovePatchFromForm } from "../app/projects/actions";
 import { positionForProjectDrop } from "../app/projects/project-drop-position";
+import { PROJECT_STATUS_ORDER, statusLabel } from "../lib/projects/status";
 
 describe("project web actions", () => {
   it("parses project area from forms with demand as the default", () => {
@@ -66,6 +67,11 @@ describe("project web actions", () => {
     form.set("position", "1500");
 
     expect(() => projectTaskMovePatchFromForm(form)).toThrow("Invalid project task status");
+  });
+
+  it("uses planning labels for project status columns without changing stored values", () => {
+    expect(PROJECT_STATUS_ORDER).toEqual(["todo", "doing", "backlog", "waiting", "done"]);
+    expect(PROJECT_STATUS_ORDER.map(statusLabel)).toEqual(["Today", "Next", "Later", "Waiting", "Done"]);
   });
 
   it("rejects missing move positions", () => {

@@ -5,6 +5,7 @@ import {
   buildProjectTaskNodes,
   completeFocusedProjectTask,
   createProjectTask,
+  loadProjectBoard,
   listFocusedProjectTasks,
   listProjects,
   nextProjectPosition,
@@ -268,6 +269,123 @@ describe("project repository helpers", () => {
     const projects = await listProjects("user-1", "delivery");
 
     expect(projects.map((project) => project.id)).toEqual(["delivery-project"]);
+  });
+
+  it("loads an all-area project board with task project metadata", async () => {
+    mockState.projects = [
+      {
+        id: "demand-project",
+        user_id: "user-1",
+        area: "demand",
+        name: "Demand",
+        description: null,
+        position: 1000,
+        archived_at: null,
+        created_at: "2026-05-30T00:00:00Z",
+        updated_at: "2026-05-30T00:00:00Z",
+      },
+      {
+        id: "personal-project",
+        user_id: "user-1",
+        area: "personal",
+        name: "Personal",
+        description: null,
+        position: 2000,
+        archived_at: null,
+        created_at: "2026-05-30T00:00:00Z",
+        updated_at: "2026-05-30T00:00:00Z",
+      },
+    ];
+    mockState.taskRows = [
+      {
+        id: "task-demand",
+        project_id: "demand-project",
+        parent_task_id: null,
+        title: "Demand task",
+        description: null,
+        status: "todo",
+        position: 1000,
+        due_date: null,
+        labels: [],
+        archived_at: null,
+        created_at: "2026-05-30T00:00:00Z",
+        updated_at: "2026-05-30T00:00:00Z",
+      },
+      {
+        id: "task-personal",
+        project_id: "personal-project",
+        parent_task_id: null,
+        title: "Personal task",
+        description: null,
+        status: "doing",
+        position: 1000,
+        due_date: null,
+        labels: [],
+        archived_at: null,
+        created_at: "2026-05-30T00:00:00Z",
+        updated_at: "2026-05-30T00:00:00Z",
+      },
+    ];
+
+    const board = await loadProjectBoard("user-1", null, null);
+
+    expect(board.activeProject).toBeNull();
+    expect(board.projects.map((project) => project.id)).toEqual(["demand-project", "personal-project"]);
+    expect(board.tasks).toMatchObject([
+      { id: "task-demand", project: { id: "demand-project", area: "demand", name: "Demand" } },
+      { id: "task-personal", project: { id: "personal-project", area: "personal", name: "Personal" } },
+    ]);
+  });
+
+  it("adds project metadata to subtasks when project rows are supplied", () => {
+    const nodes = buildProjectTaskNodes(
+      [
+        {
+          id: "task-1",
+          project_id: "project-1",
+          parent_task_id: null,
+          title: "Parent",
+          description: null,
+          status: "todo",
+          position: 1000,
+          due_date: null,
+          labels: [],
+          archived_at: null,
+          created_at: "2026-05-30T00:00:00Z",
+          updated_at: "2026-05-30T00:00:00Z",
+        },
+        {
+          id: "subtask-1",
+          project_id: "project-1",
+          parent_task_id: "task-1",
+          title: "Child",
+          description: null,
+          status: "todo",
+          position: 1000,
+          due_date: null,
+          labels: [],
+          archived_at: null,
+          created_at: "2026-05-30T00:00:00Z",
+          updated_at: "2026-05-30T00:00:00Z",
+        },
+      ],
+      [],
+      [
+        {
+          id: "project-1",
+          user_id: "user-1",
+          area: "delivery",
+          name: "Delivery Project",
+          description: null,
+          position: 1000,
+          archived_at: null,
+          created_at: "2026-05-30T00:00:00Z",
+          updated_at: "2026-05-30T00:00:00Z",
+        },
+      ],
+    );
+
+    expect(nodes[0].subtasks[0].project).toEqual({ id: "project-1", area: "delivery", name: "Delivery Project" });
   });
 
   it("lists archived projects separately from active projects", async () => {

@@ -25,6 +25,7 @@ afterEach(() => {
 describe("mobile project contracts", () => {
   it("exposes fixed project area tabs for mobile", () => {
     expect(projectAreaTabs()).toEqual([
+      { key: "all", label: "All" },
       { key: "demand", label: "Demand" },
       { key: "delivery", label: "Delivery" },
       { key: "personal", label: "Personal" },
@@ -33,9 +34,9 @@ describe("mobile project contracts", () => {
 
   it("exposes fixed status tabs for mobile", () => {
     expect(projectStatusTabs()).toEqual([
-      { key: "backlog", label: "Backlog" },
-      { key: "todo", label: "To Do" },
-      { key: "doing", label: "Doing" },
+      { key: "todo", label: "Today" },
+      { key: "doing", label: "Next" },
+      { key: "backlog", label: "Later" },
       { key: "waiting", label: "Waiting" },
       { key: "done", label: "Done" },
     ]);
@@ -47,6 +48,14 @@ describe("mobile project contracts", () => {
     expect(board.projects.length).toBeGreaterThan(0);
     expect(board.activeProject).toBeTruthy();
     expect(board.tasks.every((task) => "project_id" in task)).toBe(true);
+  });
+
+  it("loads the mock all-projects board by default", async () => {
+    const board = await getMobileProjectBoard();
+
+    expect(board.activeProject).toBeNull();
+    expect(board.projects.map((project) => project.area)).toEqual(["demand", "delivery", "personal"]);
+    expect(board.tasks[0].project).toMatchObject({ area: "demand", name: "Mobile Project" });
   });
 
   it("filters the mock board by project area", async () => {
@@ -62,7 +71,7 @@ describe("mobile project contracts", () => {
   });
 
   it("persists a clean mock project task in the mock board", async () => {
-    const board = await getMobileProjectBoard();
+    const board = await getMobileProjectBoard(null, "demand");
     const projectId = board.activeProject?.id ?? "";
 
     const created = await createMobileProjectTask(projectId, "  New mock task  ", "doing");
@@ -165,7 +174,7 @@ describe("mobile project contracts", () => {
   });
 
   it("archives and restores mock projects", async () => {
-    const board = await getMobileProjectBoard();
+    const board = await getMobileProjectBoard(null, "demand");
     const projectId = board.activeProject?.id ?? "";
 
     await updateMobileProjectArchive(projectId, true);

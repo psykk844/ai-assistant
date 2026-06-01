@@ -1,5 +1,6 @@
 import type {
   MobileProjectArea,
+  MobileProjectAreaFilter,
   MobileProjectBoardPayload,
   MobileProject,
   MobileProjectSubtask,
@@ -8,10 +9,11 @@ import type {
 } from "./projects-types";
 
 type ProjectStatusTab = { key: MobileProjectTaskStatus; label: string };
-type ProjectAreaTab = { key: MobileProjectArea; label: string };
+type ProjectAreaTab = { key: MobileProjectAreaFilter; label: string };
 
 export function projectAreaTabs(): ProjectAreaTab[] {
   return [
+    { key: "all", label: "All" },
     { key: "demand", label: "Demand" },
     { key: "delivery", label: "Delivery" },
     { key: "personal", label: "Personal" },
@@ -20,9 +22,9 @@ export function projectAreaTabs(): ProjectAreaTab[] {
 
 export function projectStatusTabs(): ProjectStatusTab[] {
   return [
-    { key: "backlog", label: "Backlog" },
-    { key: "todo", label: "To Do" },
-    { key: "doing", label: "Doing" },
+    { key: "todo", label: "Today" },
+    { key: "doing", label: "Next" },
+    { key: "backlog", label: "Later" },
     { key: "waiting", label: "Waiting" },
     { key: "done", label: "Done" },
   ];
@@ -99,6 +101,11 @@ function createInitialMockProjectBoard(): MobileProjectBoardPayload {
         position: 1000,
         due_date: null,
         labels: [{ name: "Mobile", color: "#2563eb" }],
+        project: {
+          id: activeProject.id,
+          area: activeProject.area,
+          name: activeProject.name,
+        },
         checklist: [
           {
             id: "checklist-mobile-demo",
@@ -119,6 +126,11 @@ function createInitialMockProjectBoard(): MobileProjectBoardPayload {
             position: 1000,
             due_date: null,
             labels: [],
+            project: {
+              id: activeProject.id,
+              area: activeProject.area,
+              name: activeProject.name,
+            },
             checklist: [],
           },
         ],
@@ -136,10 +148,12 @@ function cloneMockBoard(board: MobileProjectBoardPayload): MobileProjectBoardPay
     activeProject: board.activeProject ? { ...board.activeProject } : null,
     tasks: board.tasks.map((task) => ({
       ...task,
+      project: task.project ? { ...task.project } : undefined,
       labels: task.labels.map((label) => ({ ...label })),
       checklist: task.checklist.map((item) => ({ ...item })),
       subtasks: task.subtasks.map((subtask) => ({
         ...subtask,
+        project: subtask.project ? { ...subtask.project } : undefined,
         labels: subtask.labels.map((label) => ({ ...label })),
         checklist: subtask.checklist.map((item) => ({ ...item })),
       })),
@@ -182,31 +196,36 @@ export async function buildMockProjectBoard(): Promise<MobileProjectBoardPayload
 
 export async function getMobileProjectBoard(
   projectId?: string | null,
-  area: MobileProjectArea = "demand",
+  area: MobileProjectAreaFilter = "all",
   archived = false,
 ): Promise<MobileProjectBoardPayload> {
   if (!canUseBackendApi()) {
     const projects = mockProjectBoard.projects.filter((project) =>
-      projectId ? true : project.area === area && Boolean(project.archived_at) === archived,
+      projectId ? true : (area === "all" || project.area === area) && Boolean(project.archived_at) === archived,
     );
     const requestedProject = projectId
       ? mockProjectBoard.projects.find((project) => project.id === projectId) ?? projects[0] ?? null
-      : projects[0] ?? null;
+      : area === "all" ? null : projects[0] ?? null;
     return cloneMockBoard({
       ...mockProjectBoard,
       projects,
       activeProject: requestedProject,
       tasks: requestedProject
         ? mockProjectBoard.tasks.filter((task) => task.project_id === requestedProject.id)
-        : [],
+        : mockProjectBoard.tasks.filter((task) => projects.some((project) => project.id === task.project_id)),
     });
   }
 
+  const params = new URLSearchParams();
+  if (area !== "all") params.set("area", area);
+  if (archived) params.set("archived", "1");
+  if (projectId) params.set("project", projectId);
+  const query = params.toString();
   const path = projectId
     ? archived
-      ? `/api/mobile/projects?area=${encodeURIComponent(area)}&archived=1&project=${encodeURIComponent(projectId)}`
+      ? `/api/mobile/projects${query ? `?${query}` : ""}`
       : `/api/mobile/projects/${encodeURIComponent(projectId)}/board`
-    : `/api/mobile/projects?area=${encodeURIComponent(area)}${archived ? "&archived=1" : ""}`;
+    : `/api/mobile/projects${query ? `?${query}` : ""}`;
   return requestProjectsApi<MobileProjectBoardPayload>(path);
 }
 
@@ -249,6 +268,7 @@ export async function createMobileProjectTask(projectId: string, title: string, 
     return { ...task, checklist: task.checklist ?? [], subtasks: task.subtasks ?? [] };
   }
 
+  const project = mockProjectBoard.projects.find((candidate) => candidate.id === projectId);
   const task: MobileProjectTask = {
     id: `mock-${Date.now()}-${mockTaskSequence++}`,
     project_id: projectId,
@@ -259,6 +279,13 @@ export async function createMobileProjectTask(projectId: string, title: string, 
     position: Math.max(0, ...mockProjectBoard.tasks.map((candidate) => candidate.position)) + 1000,
     due_date: null,
     labels: [],
+    project: project
+      ? {
+          id: projectId,
+          area: project.area,
+          name: project.name,
+        }
+      : undefined,
     checklist: [],
     subtasks: [],
   };

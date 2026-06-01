@@ -16,4 +16,14 @@ describe("project task Today confirmation UI", () => {
 
     expect(source).toContain("Added to Today.");
   });
+
+  it("renders focused project tasks on the main app Today board", () => {
+    const pageSource = readFileSync(join(root, "app/app/page.tsx"), "utf8");
+    const boardSource = readFileSync(join(root, "app/app/board-client.tsx"), "utf8");
+
+    expect(pageSource).toContain("listFocusedProjectTasks");
+    expect(pageSource).toContain("focusedProjectTasks=");
+    expect(boardSource).toContain("FocusedProjectTaskBoardCard");
+    expect(boardSource).toContain("Project:");
+  });
 });

@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireHardcodedSession } from "@/lib/auth/session";
 import { resolveSessionUserId } from "@/lib/auth/session-user";
 import type { InboxItem } from "@/lib/items/types";
+import { listFocusedProjectTasks } from "@/lib/projects/repository";
 import { AppBoard } from "./board-client";
 import { normalizeItemTags, shouldHideFromInitialBoard } from "./board-logic";
 
@@ -43,6 +44,7 @@ export default async function AppPage() {
   const allItems = ((items ?? []) as InboxItem[])
     .map((item) => normalizeItemTags(item))
     .filter((item) => !shouldHideFromInitialBoard(item));
+  const focusedProjectTasks = await listFocusedProjectTasks(sessionUserId);
 
-  return <AppBoard initialItems={allItems} username={process.env.HARDCODED_USERNAME ?? "sam"} />;
+  return <AppBoard initialItems={allItems} focusedProjectTasks={focusedProjectTasks} username={process.env.HARDCODED_USERNAME ?? "sam"} />;
 }

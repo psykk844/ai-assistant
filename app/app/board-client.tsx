@@ -46,6 +46,9 @@ import {
 } from "./actions";
 import { laneFromItem, type LaneKey } from "@/lib/items/lane";
 import type { InboxItem, LinkSummary, RecurrenceConfig } from "@/lib/items/types";
+import type { FocusedProjectTask } from "@/lib/projects/types";
+import { areaLabel, statusLabel } from "@/lib/projects/status";
+import { completeFocusedProjectTaskAction, removeProjectTaskFocusAction } from "@/app/projects/server-actions";
 import {
   asMetadata,
   filterBoardItems,
@@ -61,6 +64,7 @@ import { SubtaskTreePanel } from "./subtask-tree";
 
 type AppBoardProps = {
   initialItems: InboxItem[];
+  focusedProjectTasks: FocusedProjectTask[];
   username: string;
 };
 
@@ -150,7 +154,7 @@ function daysUntilPurge(item: InboxItem) {
   return Math.max(days, 0);
 }
 
-export function AppBoard({ initialItems, username }: AppBoardProps) {
+export function AppBoard({ initialItems, focusedProjectTasks, username }: AppBoardProps) {
   const [items, setItems] = useState(initialItems);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [fullscreenLane, setFullscreenLane] = useState<LaneKey | null>(null);
@@ -625,7 +629,9 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                     <span className="inline-block h-[6px] w-[6px] rounded-full" style={{ backgroundColor: laneColor(lane) }} />
                     <span style={{ color: laneColor(lane) }}>{laneLabel(lane)}</span>
                   </span>
-                  <span className="float-right font-mono">{byLane[lane].length}</span>
+                  <span className="float-right font-mono">
+                    {byLane[lane].length + (lane === "today" ? focusedProjectTasks.length : 0)}
+                  </span>
                 </button>
               ))}
               <div className="flex items-center justify-between rounded-lg bg-[var(--bg-muted)] px-3 py-2">
@@ -826,6 +832,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
                     key={lane}
                     lane={lane}
                     items={byLane[lane]}
+                    focusedProjectTasks={lane === "today" ? focusedProjectTasks : []}
                     onOpenItem={setSelectedItemId}
                     onToggleStatus={handleToggleStatus}
                     pending={isPending}
@@ -1061,6 +1068,7 @@ export function AppBoard({ initialItems, username }: AppBoardProps) {
 type LaneColumnProps = {
   lane: LaneKey;
   items: InboxItem[];
+  focusedProjectTasks?: FocusedProjectTask[];
   onOpenItem: (itemId: string) => void;
   onToggleStatus: (itemId: string, currentStatus: InboxItem["status"]) => void;
   pending: boolean;
@@ -1072,6 +1080,7 @@ type LaneColumnProps = {
 const LaneColumn = memo(function LaneColumn({
   lane,
   items,
+  focusedProjectTasks = [],
   onOpenItem,
   onToggleStatus,
   pending,
@@ -1080,6 +1089,7 @@ const LaneColumn = memo(function LaneColumn({
   onTagSelect,
 }: LaneColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: lane });
+  const totalItems = items.length + focusedProjectTasks.length;
 
   return (
     <div
@@ -1091,14 +1101,17 @@ const LaneColumn = memo(function LaneColumn({
           <span className="inline-block h-[6px] w-[6px] rounded-full" style={{ backgroundColor: laneColor(lane) }} />
           {laneLabel(lane)}
         </p>
-        <span className="text-xs font-mono" style={{ color: laneColor(lane), opacity: 0.6 }}>{items.length}</span>
+        <span className="text-xs font-mono" style={{ color: laneColor(lane), opacity: 0.6 }}>{totalItems}</span>
       </div>
 
-      {items.length === 0 ? (
+      {totalItems === 0 ? (
         <EmptyLane lane={lane} />
       ) : (
         <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
           <ul className="space-y-3">
+            {focusedProjectTasks.map((item) => (
+              <FocusedProjectTaskBoardCard key={item.task.id} item={item} pending={pending} />
+            ))}
             {items.map((item, index) => (
               <SortableCard key={item.id} item={item} onOpen={() => onOpenItem(item.id)} onToggleStatus={onToggleStatus} pending={pending} index={index} selected={selectedIds.includes(item.id)} onToggleSelected={() => onToggleSelected(item.id)} onTagSelect={onTagSelect} />
             ))}
@@ -1108,6 +1121,49 @@ const LaneColumn = memo(function LaneColumn({
     </div>
   );
 });
+
+function FocusedProjectTaskBoardCard({ item, pending }: { item: FocusedProjectTask; pending: boolean }) {
+  return (
+    <li className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="rounded-md border border-emerald-300/30 bg-emerald-300/15 px-2 py-0.5 text-xs font-mono uppercase text-emerald-100">
+          project
+        </span>
+        <span className="rounded-md border px-2 py-0.5 text-xs font-mono uppercase" style={{ color: laneColor("today"), borderColor: `color-mix(in oklab, ${laneColor("today")} 30%, transparent)` }}>
+          today
+        </span>
+      </div>
+
+      <p className="text-sm font-medium">{item.task.title}</p>
+      <p className="mt-1 text-xs text-[var(--text-muted)]">
+        Project: {areaLabel(item.project.area)} / {item.project.name} / {statusLabel(item.task.status)}
+      </p>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <form action={completeFocusedProjectTaskAction}>
+          <input type="hidden" name="taskId" value={item.task.id} />
+          <button
+            type="submit"
+            className="rounded-md border border-[var(--border)] px-2 py-1 text-xs transition hover:border-emerald-300/40 hover:text-emerald-200 disabled:opacity-70"
+            disabled={pending}
+          >
+            Complete
+          </button>
+        </form>
+        <form action={removeProjectTaskFocusAction}>
+          <input type="hidden" name="taskId" value={item.task.id} />
+          <button
+            type="submit"
+            className="rounded-md border border-[var(--border)] px-2 py-1 text-xs transition hover:border-rose-300/40 hover:text-rose-200 disabled:opacity-70"
+            disabled={pending}
+          >
+            Remove
+          </button>
+        </form>
+      </div>
+    </li>
+  );
+}
 
 type SortableCardProps = {
   item: InboxItem;

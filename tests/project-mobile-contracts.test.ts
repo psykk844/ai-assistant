@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildMockProjectBoard,
+  createMobileProjectSubtask,
   buildProjectTaskStatusPatch,
   createMobileProjectTask,
   getMobileProjectBoard,
@@ -97,6 +98,57 @@ describe("mobile project contracts", () => {
       checklist: [],
       subtasks: [],
     });
+  });
+
+  it("persists a clean mock project subtask under its parent", async () => {
+    const board = await getMobileProjectBoard(null, "demand");
+    const parent = board.tasks[0];
+
+    const created = await createMobileProjectSubtask(parent.project_id, parent.id, "  New mock subtask  ");
+    const nextBoard = await getMobileProjectBoard(parent.project_id);
+    const foundParent = nextBoard.tasks.find((task) => task.id === parent.id);
+    const foundSubtask = foundParent?.subtasks.find((subtask) => subtask.id === created.id);
+
+    expect(foundSubtask).toMatchObject({
+      id: created.id,
+      project_id: parent.project_id,
+      parent_task_id: parent.id,
+      title: "New mock subtask",
+      status: "backlog",
+      labels: [],
+      checklist: [],
+    });
+  });
+
+  it("sends parentTaskId when creating a mobile project subtask through the backend", async () => {
+    process.env.EXPO_PUBLIC_USE_REAL_BACKEND = "true";
+    process.env.EXPO_PUBLIC_BACKEND_BASE_URL = "http://backend.test";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: "subtask-1",
+        project_id: "project-1",
+        parent_task_id: "task-1",
+        title: "New subtask",
+        description: null,
+        status: "backlog",
+        position: 1000,
+        due_date: null,
+        labels: [],
+        checklist: [],
+      }),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await createMobileProjectSubtask("project-1", "task-1", "New subtask");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://backend.test/api/mobile/projects/project-1/tasks",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ title: "New subtask", status: "backlog", parentTaskId: "task-1" }),
+      }),
+    );
   });
 
   it("persists mock status and checklist updates in the mock board", async () => {

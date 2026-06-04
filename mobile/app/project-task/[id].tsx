@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocalSearchParams } from "expo-router";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   buildProjectTaskStatusPatch,
+  createMobileProjectSubtask,
   getMobileProjectBoard,
   projectStatusTabs,
   updateMobileProjectChecklistItem,
@@ -54,6 +55,7 @@ function updateChecklist(task: DisplayTask, itemId: string, completed: boolean):
 
 export default function ProjectTaskDetailScreen() {
   const { id, projectId } = useLocalSearchParams<{ id: string; projectId?: string }>();
+  const router = useRouter();
   const [board, setBoard] = useState<MobileProjectBoardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -64,6 +66,7 @@ export default function ProjectTaskDetailScreen() {
   const [focusedTaskIds, setFocusedTaskIds] = useState<Set<string>>(() => new Set());
   const [titleDraft, setTitleDraft] = useState("");
   const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [subtaskTitleDraft, setSubtaskTitleDraft] = useState("");
   const statusSavingRef = useRef(false);
   const savingRef = useRef(false);
   const pendingChecklistItemIdsRef = useRef(new Set<string>());
@@ -81,6 +84,7 @@ export default function ProjectTaskDetailScreen() {
         setBoard(payload);
         setTitleDraft(task?.title ?? "");
         setDescriptionDraft(task?.description ?? "");
+        setSubtaskTitleDraft("");
         setFocusMessage(null);
         setFocusedTaskIds(new Set());
       } catch (loadError) {
@@ -211,6 +215,35 @@ export default function ProjectTaskDetailScreen() {
     }
   }
 
+  async function handleCreateSubtask() {
+    if (!task || !("subtasks" in task) || savingRef.current) return;
+    const title = subtaskTitleDraft.trim();
+    if (!title) {
+      setError("Subtask title is required.");
+      return;
+    }
+
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
+    try {
+      const created = await createMobileProjectSubtask(task.project_id, task.id, title);
+      setBoard((current) =>
+        current
+          ? updateTaskInBoard(current, task.id, (taskToUpdate) =>
+              "subtasks" in taskToUpdate ? { ...taskToUpdate, subtasks: [...taskToUpdate.subtasks, created] } : taskToUpdate,
+            )
+          : current,
+      );
+      setSubtaskTitleDraft("");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Failed to add subtask.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -319,10 +352,18 @@ export default function ProjectTaskDetailScreen() {
                       task.subtasks.map((subtask) => (
                         <View key={subtask.id} style={styles.subtaskRow}>
                           <View style={styles.subtaskHeader}>
-                            <View style={styles.subtaskTextWrap}>
+                            <Pressable
+                              accessibilityRole="button"
+                              onPress={() => {
+                                const href =
+                                  `/project-task/${encodeURIComponent(subtask.id)}?projectId=${encodeURIComponent(subtask.project_id)}` as Href;
+                                router.push(href);
+                              }}
+                              style={styles.subtaskTextWrap}
+                            >
                               <Text style={styles.subtaskTitle}>{subtask.title}</Text>
                               <Text style={styles.subtaskMeta}>{subtask.status}</Text>
-                            </View>
+                            </Pressable>
                             <Pressable
                               accessibilityRole="button"
                               disabled={saving || subtask.status === "done" || focusedTaskIds.has(subtask.id)}
@@ -342,6 +383,24 @@ export default function ProjectTaskDetailScreen() {
                     ) : (
                       <Text style={styles.muted}>No subtasks</Text>
                     )}
+                    <View style={styles.addSubtaskRow}>
+                      <TextInput
+                        accessibilityLabel="New subtask title"
+                        value={subtaskTitleDraft}
+                        onChangeText={setSubtaskTitleDraft}
+                        placeholder="Add subtask"
+                        placeholderTextColor="#94a3b8"
+                        style={styles.addSubtaskInput}
+                      />
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={saving || !subtaskTitleDraft.trim()}
+                        onPress={handleCreateSubtask}
+                        style={[styles.addSubtaskButton, (saving || !subtaskTitleDraft.trim()) && styles.disabledChip]}
+                      >
+                        <Text style={styles.addSubtaskButtonText}>{saving ? "Adding..." : "Add"}</Text>
+                      </Pressable>
+                    </View>
                   </View>
                 </>
               ) : null}
@@ -572,6 +631,35 @@ const styles = StyleSheet.create({
   subtaskFocusButtonText: {
     color: "#334155",
     fontSize: 12,
+    fontWeight: "800",
+  },
+  addSubtaskRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 4,
+  },
+  addSubtaskInput: {
+    flex: 1,
+    minWidth: 0,
+    borderWidth: 1,
+    borderColor: "#dbe3ef",
+    borderRadius: 12,
+    backgroundColor: "#f8fafc",
+    color: "#0f172a",
+    fontSize: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  addSubtaskButton: {
+    borderRadius: 12,
+    backgroundColor: "#0f172a",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  addSubtaskButtonText: {
+    color: "#ffffff",
+    fontSize: 13,
     fontWeight: "800",
   },
   errorText: {

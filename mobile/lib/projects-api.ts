@@ -297,6 +297,47 @@ export async function createMobileProjectTask(projectId: string, title: string, 
   return cloneMockBoard({ ...mockProjectBoard, tasks: [task] }).tasks[0];
 }
 
+export async function createMobileProjectSubtask(projectId: string, parentTaskId: string, title: string) {
+  const cleanTitle = title.trim();
+  if (canUseBackendApi()) {
+    const subtask = await requestProjectsApi<MobileProjectSubtask>(`/api/mobile/projects/${encodeURIComponent(projectId)}/tasks`, {
+      method: "POST",
+      body: JSON.stringify({ title: cleanTitle, status: "backlog", parentTaskId }),
+    });
+    return { ...subtask, checklist: subtask.checklist ?? [] };
+  }
+
+  const project = mockProjectBoard.projects.find((candidate) => candidate.id === projectId);
+  const parentTask = mockProjectBoard.tasks.find((candidate) => candidate.id === parentTaskId);
+  if (!parentTask) throw new Error("Parent task not found");
+
+  const subtask: MobileProjectSubtask = {
+    id: `mock-subtask-${Date.now()}-${mockTaskSequence++}`,
+    project_id: projectId,
+    parent_task_id: parentTaskId,
+    title: cleanTitle,
+    description: null,
+    status: "backlog",
+    position: Math.max(0, ...parentTask.subtasks.map((candidate) => candidate.position)) + 1000,
+    due_date: null,
+    labels: [],
+    project: project
+      ? {
+          id: projectId,
+          area: project.area,
+          name: project.name,
+        }
+      : undefined,
+    checklist: [],
+  };
+
+  mockProjectBoard = {
+    ...mockProjectBoard,
+    tasks: mockProjectBoard.tasks.map((task) => (task.id === parentTaskId ? { ...task, subtasks: [...task.subtasks, subtask] } : task)),
+  };
+  return { ...subtask, project: subtask.project ? { ...subtask.project } : undefined, labels: [], checklist: [] };
+}
+
 export async function updateMobileProjectTask(projectId: string, taskId: string, patch: Record<string, unknown>) {
   if (canUseBackendApi()) {
     return requestProjectsApi(

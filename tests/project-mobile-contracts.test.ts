@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  archiveMobileProjectTask,
   buildMockProjectBoard,
+  createMobileProjectChecklistItem,
   createMobileProjectSubtask,
+  deleteMobileProjectChecklistItem,
   buildProjectTaskStatusPatch,
   createMobileProjectTask,
   getMobileProjectBoard,
@@ -164,6 +167,92 @@ describe("mobile project contracts", () => {
     expect(updated?.status).toBe("waiting");
     expect(updated?.title).toBe("Updated title");
     expect(updated?.checklist.find((item) => item.id === checklistItem.id)?.completed).toBe(true);
+  });
+
+  it("persists mock checklist create, edit, and remove operations", async () => {
+    const board = await getMobileProjectBoard();
+    const task = board.tasks[0];
+
+    const created = await createMobileProjectChecklistItem(task.project_id, task.id, "  New checklist item  ");
+    await updateMobileProjectChecklistItem(task.project_id, task.id, created.id, { title: "  Edited checklist item  " });
+    let nextBoard = await getMobileProjectBoard(task.project_id);
+    let updated = nextBoard.tasks.find((candidate) => candidate.id === task.id);
+
+    expect(updated?.checklist.find((item) => item.id === created.id)?.title).toBe("Edited checklist item");
+
+    await deleteMobileProjectChecklistItem(task.project_id, task.id, created.id);
+    nextBoard = await getMobileProjectBoard(task.project_id);
+    updated = nextBoard.tasks.find((candidate) => candidate.id === task.id);
+
+    expect(updated?.checklist.some((item) => item.id === created.id)).toBe(false);
+  });
+
+  it("archives mock subtasks so they disappear from their parent", async () => {
+    const board = await getMobileProjectBoard();
+    const parent = board.tasks[0];
+    const subtask = parent.subtasks[0];
+
+    await archiveMobileProjectTask(parent.project_id, subtask.id);
+    const nextBoard = await getMobileProjectBoard(parent.project_id);
+    const updatedParent = nextBoard.tasks.find((candidate) => candidate.id === parent.id);
+
+    expect(updatedParent?.subtasks.some((candidate) => candidate.id === subtask.id)).toBe(false);
+  });
+
+  it("uses backend checklist POST and DELETE routes for mobile checklist edits", async () => {
+    process.env.EXPO_PUBLIC_USE_REAL_BACKEND = "true";
+    process.env.EXPO_PUBLIC_BACKEND_BASE_URL = "http://backend.test";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: "check-1", task_id: "task-1", title: "New item", completed: false, position: 1000 }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true }),
+      });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await createMobileProjectChecklistItem("project-1", "task-1", "New item");
+    await deleteMobileProjectChecklistItem("project-1", "task-1", "check-1");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://backend.test/api/mobile/projects/project-1/tasks/task-1/checklist",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ title: "New item" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://backend.test/api/mobile/projects/project-1/tasks/task-1/checklist",
+      expect.objectContaining({
+        method: "DELETE",
+        body: JSON.stringify({ itemId: "check-1" }),
+      }),
+    );
+  });
+
+  it("uses the backend task PATCH route when archiving a mobile subtask", async () => {
+    process.env.EXPO_PUBLIC_USE_REAL_BACKEND = "true";
+    process.env.EXPO_PUBLIC_BACKEND_BASE_URL = "http://backend.test";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "subtask-1", archived_at: "2026-06-05T00:00:00.000Z" }),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await archiveMobileProjectTask("project-1", "subtask-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://backend.test/api/mobile/projects/project-1/tasks/subtask-1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ archived: true }),
+      }),
+    );
   });
 
   it("uses the project board route when requesting a selected project from the backend", async () => {

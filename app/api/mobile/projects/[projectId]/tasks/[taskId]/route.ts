@@ -54,6 +54,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ proje
     status?: unknown;
     due_date?: unknown;
     focusedToday?: unknown;
+    archived?: unknown;
     labels?: unknown;
   } | null;
   if (body?.status !== undefined && !isProjectTaskStatus(body.status)) {
@@ -65,6 +66,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ proje
   if (body && "description" in body) patch.description = typeof body.description === "string" ? body.description : null;
   if (isProjectTaskStatus(body?.status)) patch.status = body.status;
   if (body && "due_date" in body) patch.due_date = typeof body.due_date === "string" ? body.due_date : null;
+  if (body?.archived === true) patch.archived_at = new Date().toISOString();
   if (Array.isArray(body?.labels)) patch.labels = body.labels;
 
   try {

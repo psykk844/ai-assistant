@@ -2,8 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
+  archiveMobileProjectTask,
   buildProjectTaskStatusPatch,
+  createMobileProjectChecklistItem,
   createMobileProjectSubtask,
+  deleteMobileProjectChecklistItem,
   getMobileProjectBoard,
   projectStatusTabs,
   updateMobileProjectChecklistItem,
@@ -53,6 +56,27 @@ function updateChecklist(task: DisplayTask, itemId: string, completed: boolean):
   };
 }
 
+function updateChecklistItemText(task: DisplayTask, itemId: string, title: string): DisplayTask {
+  return {
+    ...task,
+    checklist: task.checklist.map((item) => (item.id === itemId ? { ...item, title } : item)),
+  };
+}
+
+function appendChecklistItem(task: DisplayTask, item: MobileProjectChecklistItem): DisplayTask {
+  return {
+    ...task,
+    checklist: [...task.checklist, item],
+  };
+}
+
+function removeChecklistItemFromTask(task: DisplayTask, itemId: string): DisplayTask {
+  return {
+    ...task,
+    checklist: task.checklist.filter((item) => item.id !== itemId),
+  };
+}
+
 export default function ProjectTaskDetailScreen() {
   const { id, projectId } = useLocalSearchParams<{ id: string; projectId?: string }>();
   const router = useRouter();
@@ -66,6 +90,8 @@ export default function ProjectTaskDetailScreen() {
   const [focusedTaskIds, setFocusedTaskIds] = useState<Set<string>>(() => new Set());
   const [titleDraft, setTitleDraft] = useState("");
   const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [checklistTitleDraft, setChecklistTitleDraft] = useState("");
+  const [checklistEditDrafts, setChecklistEditDrafts] = useState<Record<string, string>>({});
   const [subtaskTitleDraft, setSubtaskTitleDraft] = useState("");
   const statusSavingRef = useRef(false);
   const savingRef = useRef(false);
@@ -84,6 +110,8 @@ export default function ProjectTaskDetailScreen() {
         setBoard(payload);
         setTitleDraft(task?.title ?? "");
         setDescriptionDraft(task?.description ?? "");
+        setChecklistTitleDraft("");
+        setChecklistEditDrafts(Object.fromEntries((task?.checklist ?? []).map((item) => [item.id, item.title])));
         setSubtaskTitleDraft("");
         setFocusMessage(null);
         setFocusedTaskIds(new Set());
@@ -142,6 +170,96 @@ export default function ProjectTaskDetailScreen() {
         current ? updateTaskInBoard(current, task.id, (taskToUpdate) => updateChecklist(taskToUpdate, item.id, item.completed)) : current,
       );
       setError(saveError instanceof Error ? saveError.message : "Failed to update checklist.");
+    } finally {
+      pendingChecklistItemIdsRef.current.delete(item.id);
+      setPendingChecklistItemIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  }
+
+  async function handleCreateChecklistItem() {
+    if (!task || savingRef.current) return;
+    const title = checklistTitleDraft.trim();
+    if (!title) {
+      setError("Checklist title is required.");
+      return;
+    }
+
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
+    try {
+      const created = await createMobileProjectChecklistItem(task.project_id, task.id, title);
+      setBoard((current) =>
+        current ? updateTaskInBoard(current, task.id, (taskToUpdate) => appendChecklistItem(taskToUpdate, created)) : current,
+      );
+      setChecklistEditDrafts((current) => ({ ...current, [created.id]: created.title }));
+      setChecklistTitleDraft("");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Failed to add checklist item.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
+  async function handleChecklistTitleSave(item: MobileProjectChecklistItem) {
+    if (!task || pendingChecklistItemIdsRef.current.has(item.id)) return;
+    const title = (checklistEditDrafts[item.id] ?? item.title).trim();
+    if (!title) {
+      setError("Checklist title is required.");
+      return;
+    }
+    if (title === item.title) return;
+
+    pendingChecklistItemIdsRef.current.add(item.id);
+    setPendingChecklistItemIds((current) => new Set(current).add(item.id));
+    setError(null);
+    try {
+      await updateMobileProjectChecklistItem(task.project_id, task.id, item.id, { title });
+      setBoard((current) =>
+        current ? updateTaskInBoard(current, task.id, (taskToUpdate) => updateChecklistItemText(taskToUpdate, item.id, title)) : current,
+      );
+      setChecklistEditDrafts((current) => ({ ...current, [item.id]: title }));
+    } catch (saveError) {
+      setChecklistEditDrafts((current) => ({ ...current, [item.id]: item.title }));
+      setError(saveError instanceof Error ? saveError.message : "Failed to update checklist item.");
+    } finally {
+      pendingChecklistItemIdsRef.current.delete(item.id);
+      setPendingChecklistItemIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  }
+
+  async function handleChecklistRemove(item: MobileProjectChecklistItem) {
+    if (!task || pendingChecklistItemIdsRef.current.has(item.id)) return;
+
+    pendingChecklistItemIdsRef.current.add(item.id);
+    setPendingChecklistItemIds((current) => new Set(current).add(item.id));
+    setBoard((current) =>
+      current ? updateTaskInBoard(current, task.id, (taskToUpdate) => removeChecklistItemFromTask(taskToUpdate, item.id)) : current,
+    );
+    setError(null);
+
+    try {
+      await deleteMobileProjectChecklistItem(task.project_id, task.id, item.id);
+      setChecklistEditDrafts((current) => {
+        const next = { ...current };
+        delete next[item.id];
+        return next;
+      });
+    } catch (saveError) {
+      setBoard((current) =>
+        current ? updateTaskInBoard(current, task.id, (taskToUpdate) => appendChecklistItem(taskToUpdate, item)) : current,
+      );
+      setChecklistEditDrafts((current) => ({ ...current, [item.id]: item.title }));
+      setError(saveError instanceof Error ? saveError.message : "Failed to remove checklist item.");
     } finally {
       pendingChecklistItemIdsRef.current.delete(item.id);
       setPendingChecklistItemIds((current) => {
@@ -244,6 +362,39 @@ export default function ProjectTaskDetailScreen() {
     }
   }
 
+  async function handleRemoveSubtask(subtask: MobileProjectSubtask) {
+    if (!task || !("subtasks" in task) || savingRef.current) return;
+    const previousSubtasks = task.subtasks;
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
+    setBoard((current) =>
+      current
+        ? updateTaskInBoard(current, task.id, (taskToUpdate) =>
+            "subtasks" in taskToUpdate
+              ? { ...taskToUpdate, subtasks: taskToUpdate.subtasks.filter((candidate) => candidate.id !== subtask.id) }
+              : taskToUpdate,
+          )
+        : current,
+    );
+
+    try {
+      await archiveMobileProjectTask(task.project_id, subtask.id);
+    } catch (saveError) {
+      setBoard((current) =>
+        current
+          ? updateTaskInBoard(current, task.id, (taskToUpdate) =>
+              "subtasks" in taskToUpdate ? { ...taskToUpdate, subtasks: previousSubtasks } : taskToUpdate,
+            )
+          : current,
+      );
+      setError(saveError instanceof Error ? saveError.message : "Failed to remove subtask.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -327,6 +478,7 @@ export default function ProjectTaskDetailScreen() {
               <View style={styles.listWrap}>
                 {task.checklist.length ? (
                   task.checklist.map((item) => (
+                    <View key={item.id} style={styles.checkEditWrap}>
                     <Pressable
                       accessibilityRole="checkbox"
                       accessibilityState={{ checked: item.completed }}
@@ -338,10 +490,59 @@ export default function ProjectTaskDetailScreen() {
                       <Text style={[styles.checkBox, item.completed && styles.checkedBox]}>{item.completed ? "✓" : ""}</Text>
                       <Text style={[styles.checkText, item.completed && styles.completedText]}>{item.title}</Text>
                     </Pressable>
+                    <View style={styles.checkEditRow}>
+                      <TextInput
+                        accessibilityLabel="Checklist item title"
+                        value={checklistEditDrafts[item.id] ?? item.title}
+                        onChangeText={(value) => setChecklistEditDrafts((current) => ({ ...current, [item.id]: value }))}
+                        placeholder="Checklist item"
+                        placeholderTextColor="#94a3b8"
+                        style={styles.checkInput}
+                      />
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={pendingChecklistItemIds.has(item.id) || (checklistEditDrafts[item.id] ?? item.title).trim() === item.title}
+                        onPress={() => handleChecklistTitleSave(item)}
+                        style={[
+                          styles.smallActionButton,
+                          (pendingChecklistItemIds.has(item.id) || (checklistEditDrafts[item.id] ?? item.title).trim() === item.title) &&
+                            styles.disabledChip,
+                        ]}
+                      >
+                        <Text style={styles.smallActionButtonText}>Save</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={pendingChecklistItemIds.has(item.id)}
+                        onPress={() => handleChecklistRemove(item)}
+                        style={[styles.removeButton, pendingChecklistItemIds.has(item.id) && styles.disabledChip]}
+                      >
+                        <Text style={styles.removeButtonText}>Remove</Text>
+                      </Pressable>
+                    </View>
+                    </View>
                   ))
                 ) : (
                   <Text style={styles.muted}>No checklist items</Text>
                 )}
+                <View style={styles.addSubtaskRow}>
+                  <TextInput
+                    accessibilityLabel="New checklist item title"
+                    value={checklistTitleDraft}
+                    onChangeText={setChecklistTitleDraft}
+                    placeholder="Add checklist item"
+                    placeholderTextColor="#94a3b8"
+                    style={styles.addSubtaskInput}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={saving || !checklistTitleDraft.trim()}
+                    onPress={handleCreateChecklistItem}
+                    style={[styles.addSubtaskButton, (saving || !checklistTitleDraft.trim()) && styles.disabledChip]}
+                  >
+                    <Text style={styles.addSubtaskButtonText}>{saving ? "Adding..." : "Add"}</Text>
+                  </Pressable>
+                </View>
               </View>
 
               {"subtasks" in task ? (
@@ -376,6 +577,14 @@ export default function ProjectTaskDetailScreen() {
                               <Text style={styles.subtaskFocusButtonText}>
                                 {focusedTaskIds.has(subtask.id) ? "Added" : saving ? "Adding..." : "Today"}
                               </Text>
+                            </Pressable>
+                            <Pressable
+                              accessibilityRole="button"
+                              disabled={saving}
+                              onPress={() => handleRemoveSubtask(subtask)}
+                              style={[styles.removeButton, saving && styles.disabledChip]}
+                            >
+                              <Text style={styles.removeButtonText}>Remove</Text>
                             </Pressable>
                           </View>
                         </View>
@@ -566,6 +775,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
+  checkEditWrap: {
+    gap: 7,
+  },
+  checkEditRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   disabledRow: {
     opacity: 0.5,
   },
@@ -590,9 +807,47 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
   },
+  checkInput: {
+    flex: 1,
+    minWidth: 0,
+    borderWidth: 1,
+    borderColor: "#dbe3ef",
+    borderRadius: 10,
+    backgroundColor: "#f8fafc",
+    color: "#0f172a",
+    fontSize: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
   completedText: {
     color: "#64748b",
     textDecorationLine: "line-through",
+  },
+  smallActionButton: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  smallActionButtonText: {
+    color: "#334155",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  removeButton: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    backgroundColor: "#fff1f2",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  removeButtonText: {
+    color: "#be123c",
+    fontSize: 12,
+    fontWeight: "800",
   },
   subtaskRow: {
     borderTopWidth: 1,

@@ -2,6 +2,7 @@ import type {
   MobileProjectArea,
   MobileProjectAreaFilter,
   MobileProjectBoardPayload,
+  MobileProjectChecklistItem,
   MobileProject,
   MobileProjectSubtask,
   MobileProjectTask,
@@ -361,6 +362,35 @@ export async function updateMobileProjectTask(projectId: string, taskId: string,
   return updated ? { ok: true } : { ok: false };
 }
 
+export async function archiveMobileProjectTask(projectId: string, taskId: string) {
+  if (canUseBackendApi()) {
+    return requestProjectsApi(`/api/mobile/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ archived: true }),
+    });
+  }
+
+  let archived = false;
+  mockProjectBoard = {
+    ...mockProjectBoard,
+    tasks: mockProjectBoard.tasks.flatMap((task) => {
+      if (task.id === taskId) {
+        archived = true;
+        return [];
+      }
+
+      const subtasks = task.subtasks.filter((subtask) => {
+        if (subtask.id !== taskId) return true;
+        archived = true;
+        return false;
+      });
+      return [{ ...task, subtasks }];
+    }),
+  };
+
+  return { ok: archived };
+}
+
 export async function updateMobileProjectTaskFocus(projectId: string, taskId: string, focusedToday: boolean) {
   if (canUseBackendApi()) {
     return requestProjectsApi(
@@ -403,6 +433,59 @@ export async function updateMobileProjectChecklistItem(
           }
         : item,
     ),
+  }));
+
+  return updated ? { ok: true } : { ok: false };
+}
+
+export async function createMobileProjectChecklistItem(projectId: string, taskId: string, title: string) {
+  const cleanTitle = title.trim();
+  if (canUseBackendApi()) {
+    return requestProjectsApi<MobileProjectChecklistItem>(
+      `/api/mobile/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/checklist`,
+      {
+        method: "POST",
+        body: JSON.stringify({ title: cleanTitle }),
+      },
+    );
+  }
+
+  const item = {
+    id: `mock-checklist-${Date.now()}-${mockTaskSequence++}`,
+    task_id: taskId,
+    title: cleanTitle,
+    completed: false,
+    position: 1000,
+  };
+  const updated = updateMockTask(taskId, (task) => ({
+    ...task,
+    checklist: [
+      ...task.checklist,
+      {
+        ...item,
+        position: Math.max(0, ...task.checklist.map((candidate) => candidate.position)) + 1000,
+      },
+    ],
+  }));
+
+  if (!updated) throw new Error("Task not found");
+  return { ...item };
+}
+
+export async function deleteMobileProjectChecklistItem(projectId: string, taskId: string, itemId: string) {
+  if (canUseBackendApi()) {
+    return requestProjectsApi(
+      `/api/mobile/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/checklist`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({ itemId }),
+      },
+    );
+  }
+
+  const updated = updateMockTask(taskId, (task) => ({
+    ...task,
+    checklist: task.checklist.filter((item) => item.id !== itemId),
   }));
 
   return updated ? { ok: true } : { ok: false };

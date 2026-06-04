@@ -119,6 +119,7 @@ vi.mock("@/lib/supabase/admin", () => ({
       const filters: Array<{ column: string; value: unknown; op: "eq" | "is" | "not-is" | "in" }> = [];
       let insertPayload: Record<string, unknown> | null = null;
       let updatePayload: Record<string, unknown> | null = null;
+      let deleteRequested = false;
 
       function tableRows() {
         if (table === "projects") return db.projects;
@@ -169,6 +170,10 @@ vi.mock("@/lib/supabase/admin", () => ({
           updatePayload = payload;
           return query;
         },
+        delete() {
+          deleteRequested = true;
+          return query;
+        },
         single() {
           if (insertPayload) {
             const row = {
@@ -191,6 +196,14 @@ vi.mock("@/lib/supabase/admin", () => ({
           return Promise.resolve({ data: row, error: null });
         },
         then(resolve: (value: unknown) => void) {
+          if (deleteRequested) {
+            const rows = applyFilters(tableRows());
+            if (table === "project_checklist_items") {
+              db.checklist = db.checklist.filter((row) => !rows.some((candidate) => candidate.id === row.id));
+            }
+            resolve({ data: null, error: null });
+            return;
+          }
           resolve({ data: applyFilters(tableRows()), error: null });
         },
       };
@@ -303,6 +316,7 @@ describe("mobile project routes", () => {
     expect(response.status).toBe(204);
     expect(response.headers.get("access-control-allow-methods")).toContain("PATCH");
     expect(response.headers.get("access-control-allow-methods")).toContain("POST");
+    expect(response.headers.get("access-control-allow-methods")).toContain("DELETE");
   });
 
   it("returns 404 for an invalid project board route instead of a fallback project", async () => {
@@ -415,5 +429,56 @@ describe("mobile project routes", () => {
     expect(response.status).toBe(400);
     expect(body.error).toBe("itemId is required");
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  it("archives a task or subtask from the mobile task route", async () => {
+    const { PATCH } = await import("../app/api/mobile/projects/[projectId]/tasks/[taskId]/route");
+    const response = await PATCH(
+      new Request("http://localhost/api/mobile/projects/project-1/tasks/subtask-1", {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "x-mobile-dev-key": "test-mobile-key" },
+        body: JSON.stringify({ archived: true }),
+      }),
+      { params: Promise.resolve({ projectId: "project-1", taskId: "subtask-1" }) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.id).toBe("subtask-1");
+    expect(body.archived_at).toEqual(expect.any(String));
+  });
+
+  it("deletes checklist items from the mobile checklist route", async () => {
+    const { DELETE } = await import("../app/api/mobile/projects/[projectId]/tasks/[taskId]/checklist/route");
+    const response = await DELETE(
+      new Request("http://localhost/api/mobile/projects/project-1/tasks/task-1/checklist", {
+        method: "DELETE",
+        headers: { "content-type": "application/json", "x-mobile-dev-key": "test-mobile-key" },
+        body: JSON.stringify({ itemId: "item-1" }),
+      }),
+      { params: Promise.resolve({ projectId: "project-1", taskId: "task-1" }) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(db.checklist.some((item) => item.id === "item-1")).toBe(false);
+  });
+
+  it("rejects checklist DELETE when the item is not on the route task", async () => {
+    const { DELETE } = await import("../app/api/mobile/projects/[projectId]/tasks/[taskId]/checklist/route");
+    const response = await DELETE(
+      new Request("http://localhost/api/mobile/projects/project-1/tasks/task-1/checklist", {
+        method: "DELETE",
+        headers: { "content-type": "application/json", "x-mobile-dev-key": "test-mobile-key" },
+        body: JSON.stringify({ itemId: "item-2" }),
+      }),
+      { params: Promise.resolve({ projectId: "project-1", taskId: "task-1" }) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("not found");
+    expect(db.checklist.some((item) => item.id === "item-2")).toBe(true);
   });
 });

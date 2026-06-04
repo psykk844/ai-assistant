@@ -453,3 +453,16 @@ export async function updateChecklistItem(
   if (error || !data) throw new Error(`Failed to update checklist item: ${error?.message ?? "missing row"}`);
   return data as ProjectChecklistItem;
 }
+
+export async function deleteChecklistItem(userId: string, itemId: string) {
+  if (!itemId.trim()) throw new Error("Checklist item id is required");
+
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("project_checklist_items")
+    .delete()
+    .eq("user_id", userId)
+    .eq("id", itemId);
+
+  if (error) throw new Error(`Failed to delete checklist item: ${error.message}`);
+}

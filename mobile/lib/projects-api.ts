@@ -271,6 +271,21 @@ export function buildProjectTaskStatusPatch(status: MobileProjectTaskStatus) {
   return { status };
 }
 
+export function reorderMobileProjectChecklistItems(
+  items: MobileProjectChecklistItem[],
+  itemId: string,
+  direction: "up" | "down",
+) {
+  const currentIndex = items.findIndex((item) => item.id === itemId);
+  const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  if (currentIndex < 0 || targetIndex < 0 || targetIndex >= items.length) return null;
+
+  const nextOrder = [...items];
+  const [moved] = nextOrder.splice(currentIndex, 1);
+  nextOrder.splice(targetIndex, 0, moved);
+  return nextOrder.map((item, index) => ({ ...item, position: (index + 1) * 1000 }));
+}
+
 export async function createMobileProjectTask(projectId: string, title: string, status: MobileProjectTaskStatus) {
   const cleanTitle = title.trim();
   if (canUseBackendApi()) {

@@ -10,6 +10,7 @@ import {
   getMobileProjectBoard,
   projectAreaTabs,
   projectStatusTabs,
+  reorderMobileProjectChecklistItems,
   resetMockProjectBoard,
   resolveMobileProjectSelection,
   updateMobileProjectArchive,
@@ -185,6 +186,26 @@ describe("mobile project contracts", () => {
     updated = nextBoard.tasks.find((candidate) => candidate.id === task.id);
 
     expect(updated?.checklist.some((item) => item.id === created.id)).toBe(false);
+  });
+
+  it("builds reordered checklist positions for mobile checklist moves", () => {
+    const items = [
+      { id: "check-1", task_id: "task-1", title: "First", completed: false, position: 1000 },
+      { id: "check-2", task_id: "task-1", title: "Second", completed: false, position: 2000 },
+      { id: "check-3", task_id: "task-1", title: "Third", completed: false, position: 3000 },
+    ];
+
+    expect(reorderMobileProjectChecklistItems(items, "check-2", "up")?.map((item) => [item.id, item.position])).toEqual([
+      ["check-2", 1000],
+      ["check-1", 2000],
+      ["check-3", 3000],
+    ]);
+    expect(reorderMobileProjectChecklistItems(items, "check-2", "down")?.map((item) => [item.id, item.position])).toEqual([
+      ["check-1", 1000],
+      ["check-3", 2000],
+      ["check-2", 3000],
+    ]);
+    expect(reorderMobileProjectChecklistItems(items, "check-1", "up")).toBeNull();
   });
 
   it("archives mock subtasks so they disappear from their parent", async () => {

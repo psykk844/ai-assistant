@@ -9,6 +9,7 @@ import {
   addProjectTaskFocusAction,
   createProjectChecklistItemAction,
   createProjectTaskAction,
+  deleteProjectChecklistItemAction,
   updateProjectChecklistItemAction,
   updateProjectTaskAction,
 } from "./server-actions";
@@ -27,6 +28,7 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
   const [status, setStatus] = useState<ProjectTaskStatus>("todo");
   const [dueDate, setDueDate] = useState("");
   const [checklistTitle, setChecklistTitle] = useState("");
+  const [checklistTitleDrafts, setChecklistTitleDrafts] = useState<Record<string, string>>({});
   const [subtaskTitle, setSubtaskTitle] = useState("");
   const [subtaskTitleDrafts, setSubtaskTitleDrafts] = useState<Record<string, string>>({});
   const [mutationMessage, setMutationMessage] = useState<{ tone: "error" | "info"; text: string } | null>(null);
@@ -44,6 +46,7 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
     setStatus(task?.status ?? "todo");
     setDueDate(task?.due_date ?? "");
     setChecklistTitle("");
+    setChecklistTitleDrafts(Object.fromEntries((task?.checklist ?? []).map((item) => [item.id, item.title])));
     setSubtaskTitle("");
     setSubtaskTitleDrafts(Object.fromEntries((task?.subtasks ?? []).map((subtask) => [subtask.id, subtask.title])));
     if (taskChanged) {
@@ -142,6 +145,46 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
     runMutation(() => createProjectTaskAction(formData), {
       onSuccess: () => setSubtaskTitle(""),
       failureMessage: "Could not add subtask. Please try again.",
+    });
+  }
+
+  function handleChecklistTitleSave(item: ProjectTaskNode["checklist"][number]) {
+    const nextTitle = (checklistTitleDrafts[item.id] ?? item.title).trim();
+    if (!nextTitle) {
+      setMutationMessage({ tone: "error", text: "Checklist title is required." });
+      setChecklistTitleDrafts((current) => ({ ...current, [item.id]: item.title }));
+      return;
+    }
+    if (nextTitle === item.title) return;
+
+    runMutation(() => updateProjectChecklistItemAction(item.id, { title: nextTitle }), {
+      onFailure: () => setChecklistTitleDrafts((current) => ({ ...current, [item.id]: item.title })),
+      failureMessage: "Could not update checklist item. Please try again.",
+    });
+  }
+
+  function handleMoveChecklistItem(itemId: string, direction: "up" | "down") {
+    const currentIndex = currentTask.checklist.findIndex((item) => item.id === itemId);
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= currentTask.checklist.length) return;
+
+    const nextOrder = [...currentTask.checklist];
+    const [moved] = nextOrder.splice(currentIndex, 1);
+    nextOrder.splice(targetIndex, 0, moved);
+
+    runMutation(
+      async () => {
+        await Promise.all(
+          nextOrder.map((item, index) => updateProjectChecklistItemAction(item.id, { position: (index + 1) * 1000 })),
+        );
+      },
+      { failureMessage: "Could not reorder checklist. Please try again." },
+    );
+  }
+
+  function handleRemoveChecklistItem(itemId: string) {
+    runMutation(() => deleteProjectChecklistItemAction(itemId), {
+      failureMessage: "Could not remove checklist item. Please try again.",
     });
   }
 
@@ -295,30 +338,84 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
               No checklist items.
             </p>
           ) : (
-            currentTask.checklist.map((item) => {
+            currentTask.checklist.map((item, index) => {
               const checked = checklistOverrides[item.id] ?? item.completed;
+              const draftTitle = checklistTitleDrafts[item.id] ?? item.title;
+              const titleChanged = draftTitle.trim() !== item.title;
 
               return (
-                <label
+                <div
                   key={item.id}
-                  className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm"
+                  className="rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 text-sm"
                 >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(event) => {
-                      const nextCompleted = event.target.checked;
-                      setChecklistOverrides((current) => ({ ...current, [item.id]: nextCompleted }));
-                      runMutation(() => updateProjectChecklistItemAction(item.id, { completed: nextCompleted }), {
-                        onFailure: () =>
-                          setChecklistOverrides((current) => ({ ...current, [item.id]: item.completed })),
-                        failureMessage: "Could not update checklist item. Please try again.",
-                      });
-                    }}
-                    disabled={isPending}
-                  />
-                  <span className={checked ? "text-[var(--text-muted)] line-through" : ""}>{item.title}</span>
-                </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => {
+                        const nextCompleted = event.target.checked;
+                        setChecklistOverrides((current) => ({ ...current, [item.id]: nextCompleted }));
+                        runMutation(() => updateProjectChecklistItemAction(item.id, { completed: nextCompleted }), {
+                          onFailure: () =>
+                            setChecklistOverrides((current) => ({ ...current, [item.id]: item.completed })),
+                          failureMessage: "Could not update checklist item. Please try again.",
+                        });
+                      }}
+                      disabled={isPending}
+                    />
+                    <label className="sr-only" htmlFor={`checklist-title-${item.id}`}>
+                      Checklist item title
+                    </label>
+                    <input
+                      id={`checklist-title-${item.id}`}
+                      value={draftTitle}
+                      onChange={(event) =>
+                        setChecklistTitleDrafts((current) => ({ ...current, [item.id]: event.target.value }))
+                      }
+                      onBlur={() => {
+                        if (titleChanged) handleChecklistTitleSave(item);
+                      }}
+                      className={`min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1.5 outline-none focus:border-[var(--accent)] ${
+                        checked ? "text-[var(--text-muted)] line-through" : ""
+                      }`}
+                      disabled={isPending}
+                    />
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 pl-7">
+                    <button
+                      type="button"
+                      onClick={() => handleChecklistTitleSave(item)}
+                      className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
+                      disabled={isPending || !draftTitle.trim() || !titleChanged}
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveChecklistItem(item.id, "up")}
+                      className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
+                      disabled={isPending || index === 0}
+                    >
+                      Up
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveChecklistItem(item.id, "down")}
+                      className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
+                      disabled={isPending || index === currentTask.checklist.length - 1}
+                    >
+                      Down
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveChecklistItem(item.id)}
+                      className="rounded-md border border-red-500/50 px-2 py-1 text-xs text-red-300 transition hover:bg-red-500/10 disabled:opacity-60"
+                      disabled={isPending}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
               );
             })
           )}

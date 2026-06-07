@@ -7,6 +7,7 @@ import {
   createProjectAction as createProjectActionImpl,
   createProjectChecklistItemAction as createProjectChecklistItemActionImpl,
   createProjectTaskAction as createProjectTaskActionImpl,
+  deleteProjectChecklistItemAction as deleteProjectChecklistItemActionImpl,
   moveProjectTaskAction as moveProjectTaskActionImpl,
   removeProjectTaskFocusAction as removeProjectTaskFocusActionImpl,
   updateProjectArchiveAction as updateProjectArchiveActionImpl,
@@ -70,4 +71,8 @@ export async function updateProjectChecklistItemAction(
   patch: { title?: string; completed?: boolean; position?: number },
 ) {
   return updateProjectChecklistItemActionImpl(itemId, patch);
+}
+
+export async function deleteProjectChecklistItemAction(itemId: string) {
+  return deleteProjectChecklistItemActionImpl(itemId);
 }

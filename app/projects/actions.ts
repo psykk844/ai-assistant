@@ -7,6 +7,7 @@ import {
   createProject,
   createProjectTask,
   completeFocusedProjectTask,
+  deleteChecklistItem,
   removeProjectTaskFocus,
   updateChecklistItem,
   updateProjectArchive,
@@ -157,5 +158,11 @@ export async function updateProjectChecklistItemAction(
 ) {
   const userId = await resolveSessionUserId();
   await updateChecklistItem(userId, itemId, patch);
+  revalidatePath("/projects");
+}
+
+export async function deleteProjectChecklistItemAction(itemId: string) {
+  const userId = await resolveSessionUserId();
+  await deleteChecklistItem(userId, itemId);
   revalidatePath("/projects");
 }

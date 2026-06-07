@@ -9,6 +9,7 @@ import {
   deleteMobileProjectChecklistItem,
   getMobileProjectBoard,
   projectStatusTabs,
+  reorderMobileProjectChecklistItems,
   updateMobileProjectChecklistItem,
   updateMobileProjectTask,
   updateMobileProjectTaskFocus,
@@ -286,6 +287,36 @@ export default function ProjectTaskDetailScreen() {
         next.delete(item.id);
         return next;
       });
+    }
+  }
+
+  async function handleMoveChecklistItem(item: MobileProjectChecklistItem, direction: "up" | "down") {
+    if (!task || savingRef.current) return;
+    const nextChecklist = reorderMobileProjectChecklistItems(task.checklist, item.id, direction);
+    if (!nextChecklist) return;
+
+    const previousChecklist = task.checklist;
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
+    setBoard((current) =>
+      current ? updateTaskInBoard(current, task.id, (taskToUpdate) => ({ ...taskToUpdate, checklist: nextChecklist })) : current,
+    );
+
+    try {
+      await Promise.all(
+        nextChecklist.map((candidate) =>
+          updateMobileProjectChecklistItem(task.project_id, task.id, candidate.id, { position: candidate.position }),
+        ),
+      );
+    } catch (saveError) {
+      setBoard((current) =>
+        current ? updateTaskInBoard(current, task.id, (taskToUpdate) => ({ ...taskToUpdate, checklist: previousChecklist })) : current,
+      );
+      setError(saveError instanceof Error ? saveError.message : "Failed to reorder checklist.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   }
 
@@ -593,7 +624,7 @@ export default function ProjectTaskDetailScreen() {
               <Text style={styles.label}>Checklist</Text>
               <View style={styles.listWrap}>
                 {task.checklist.length ? (
-                  task.checklist.map((item) => (
+                  task.checklist.map((item, index) => (
                     <View key={item.id} style={styles.checkEditWrap}>
                     <Pressable
                       accessibilityRole="checkbox"
@@ -626,6 +657,28 @@ export default function ProjectTaskDetailScreen() {
                         ]}
                       >
                         <Text style={styles.smallActionButtonText}>Save</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={saving || pendingChecklistItemIds.has(item.id) || index === 0}
+                        onPress={() => handleMoveChecklistItem(item, "up")}
+                        style={[
+                          styles.smallActionButton,
+                          (saving || pendingChecklistItemIds.has(item.id) || index === 0) && styles.disabledChip,
+                        ]}
+                      >
+                        <Text style={styles.smallActionButtonText}>Up</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={saving || pendingChecklistItemIds.has(item.id) || index === task.checklist.length - 1}
+                        onPress={() => handleMoveChecklistItem(item, "down")}
+                        style={[
+                          styles.smallActionButton,
+                          (saving || pendingChecklistItemIds.has(item.id) || index === task.checklist.length - 1) && styles.disabledChip,
+                        ]}
+                      >
+                        <Text style={styles.smallActionButtonText}>Down</Text>
                       </Pressable>
                       <Pressable
                         accessibilityRole="button"

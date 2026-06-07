@@ -151,19 +151,27 @@ function cloneMockBoard(board: MobileProjectBoardPayload): MobileProjectBoardPay
   return {
     projects: board.projects.map((project) => ({ ...project })),
     activeProject: board.activeProject ? { ...board.activeProject } : null,
-    tasks: board.tasks.map((task) => ({
-      ...task,
-      project: task.project ? { ...task.project } : undefined,
-      labels: task.labels.map((label) => ({ ...label })),
-      checklist: task.checklist.map((item) => ({ ...item })),
-      subtasks: task.subtasks.map((subtask) => ({
-        ...subtask,
-        project: subtask.project ? { ...subtask.project } : undefined,
-        labels: subtask.labels.map((label) => ({ ...label })),
-        checklist: subtask.checklist.map((item) => ({ ...item })),
-      })),
-    })),
+    tasks: board.tasks
+      .map((task) => ({
+        ...task,
+        project: task.project ? { ...task.project } : undefined,
+        labels: task.labels.map((label) => ({ ...label })),
+        checklist: task.checklist.map((item) => ({ ...item })).sort(comparePosition),
+        subtasks: task.subtasks
+          .map((subtask) => ({
+            ...subtask,
+            project: subtask.project ? { ...subtask.project } : undefined,
+            labels: subtask.labels.map((label) => ({ ...label })),
+            checklist: subtask.checklist.map((item) => ({ ...item })).sort(comparePosition),
+          }))
+          .sort(comparePosition),
+      }))
+      .sort(comparePosition),
   };
+}
+
+function comparePosition<T extends { position: number }>(left: T, right: T) {
+  return left.position - right.position;
 }
 
 function updateMockTask(
@@ -355,6 +363,7 @@ export async function updateMobileProjectTask(projectId: string, taskId: string,
     title: typeof patch.title === "string" ? patch.title.trim() : task.title,
     description: "description" in patch ? (typeof patch.description === "string" ? patch.description.trim() || null : null) : task.description,
     status: typeof patch.status === "string" ? (patch.status as MobileProjectTaskStatus) : task.status,
+    position: typeof patch.position === "number" && Number.isFinite(patch.position) ? patch.position : task.position,
     due_date: "due_date" in patch ? (typeof patch.due_date === "string" ? patch.due_date : null) : task.due_date,
     labels: Array.isArray(patch.labels) ? task.labels : task.labels,
   }));

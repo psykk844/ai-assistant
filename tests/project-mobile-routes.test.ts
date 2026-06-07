@@ -448,6 +448,23 @@ describe("mobile project routes", () => {
     expect(body.archived_at).toEqual(expect.any(String));
   });
 
+  it("updates subtask text and position from the mobile task route", async () => {
+    const { PATCH } = await import("../app/api/mobile/projects/[projectId]/tasks/[taskId]/route");
+    const response = await PATCH(
+      new Request("http://localhost/api/mobile/projects/project-1/tasks/subtask-1", {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "x-mobile-dev-key": "test-mobile-key" },
+        body: JSON.stringify({ title: "Edited subtask", position: 2500 }),
+      }),
+      { params: Promise.resolve({ projectId: "project-1", taskId: "subtask-1" }) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.title).toBe("Edited subtask");
+    expect(body.position).toBe(2500);
+  });
+
   it("deletes checklist items from the mobile checklist route", async () => {
     const { DELETE } = await import("../app/api/mobile/projects/[projectId]/tasks/[taskId]/checklist/route");
     const response = await DELETE(

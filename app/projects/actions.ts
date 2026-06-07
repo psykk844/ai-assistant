@@ -91,6 +91,7 @@ export async function updateProjectTaskAction(
     title?: string;
     description?: string | null;
     status?: ProjectTaskStatus;
+    position?: number;
     due_date?: string | null;
     labels?: Array<{ name: string; color: string }>;
   },

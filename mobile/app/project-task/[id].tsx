@@ -77,6 +77,21 @@ function removeChecklistItemFromTask(task: DisplayTask, itemId: string): Display
   };
 }
 
+function reorderSubtasks(
+  subtasks: MobileProjectSubtask[],
+  subtaskId: string,
+  direction: "up" | "down",
+): MobileProjectSubtask[] | null {
+  const currentIndex = subtasks.findIndex((subtask) => subtask.id === subtaskId);
+  const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  if (currentIndex < 0 || targetIndex < 0 || targetIndex >= subtasks.length) return null;
+
+  const nextOrder = [...subtasks];
+  const [moved] = nextOrder.splice(currentIndex, 1);
+  nextOrder.splice(targetIndex, 0, moved);
+  return nextOrder.map((subtask, index) => ({ ...subtask, position: (index + 1) * 1000 }));
+}
+
 export default function ProjectTaskDetailScreen() {
   const { id, projectId } = useLocalSearchParams<{ id: string; projectId?: string }>();
   const router = useRouter();
@@ -93,6 +108,7 @@ export default function ProjectTaskDetailScreen() {
   const [checklistTitleDraft, setChecklistTitleDraft] = useState("");
   const [checklistEditDrafts, setChecklistEditDrafts] = useState<Record<string, string>>({});
   const [subtaskTitleDraft, setSubtaskTitleDraft] = useState("");
+  const [subtaskEditDrafts, setSubtaskEditDrafts] = useState<Record<string, string>>({});
   const statusSavingRef = useRef(false);
   const savingRef = useRef(false);
   const pendingChecklistItemIdsRef = useRef(new Set<string>());
@@ -113,6 +129,9 @@ export default function ProjectTaskDetailScreen() {
         setChecklistTitleDraft("");
         setChecklistEditDrafts(Object.fromEntries((task?.checklist ?? []).map((item) => [item.id, item.title])));
         setSubtaskTitleDraft("");
+        setSubtaskEditDrafts(
+          task && "subtasks" in task ? Object.fromEntries(task.subtasks.map((subtask) => [subtask.id, subtask.title])) : {},
+        );
         setFocusMessage(null);
         setFocusedTaskIds(new Set());
       } catch (loadError) {
@@ -353,9 +372,101 @@ export default function ProjectTaskDetailScreen() {
             )
           : current,
       );
+      setSubtaskEditDrafts((current) => ({ ...current, [created.id]: created.title }));
       setSubtaskTitleDraft("");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to add subtask.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
+  async function handleSubtaskTitleSave(subtask: MobileProjectSubtask) {
+    if (!task || !("subtasks" in task) || savingRef.current) return;
+    const title = (subtaskEditDrafts[subtask.id] ?? subtask.title).trim();
+    if (!title) {
+      setError("Subtask title is required.");
+      setSubtaskEditDrafts((current) => ({ ...current, [subtask.id]: subtask.title }));
+      return;
+    }
+    if (title === subtask.title) return;
+
+    const previousTitle = subtask.title;
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
+    setBoard((current) =>
+      current
+        ? updateTaskInBoard(current, task.id, (taskToUpdate) =>
+            "subtasks" in taskToUpdate
+              ? {
+                  ...taskToUpdate,
+                  subtasks: taskToUpdate.subtasks.map((candidate) =>
+                    candidate.id === subtask.id ? { ...candidate, title } : candidate,
+                  ),
+                }
+              : taskToUpdate,
+          )
+        : current,
+    );
+
+    try {
+      await updateMobileProjectTask(task.project_id, subtask.id, { title });
+      setSubtaskEditDrafts((current) => ({ ...current, [subtask.id]: title }));
+    } catch (saveError) {
+      setBoard((current) =>
+        current
+          ? updateTaskInBoard(current, task.id, (taskToUpdate) =>
+              "subtasks" in taskToUpdate
+                ? {
+                    ...taskToUpdate,
+                    subtasks: taskToUpdate.subtasks.map((candidate) =>
+                      candidate.id === subtask.id ? { ...candidate, title: previousTitle } : candidate,
+                    ),
+                  }
+                : taskToUpdate,
+            )
+          : current,
+      );
+      setSubtaskEditDrafts((current) => ({ ...current, [subtask.id]: previousTitle }));
+      setError(saveError instanceof Error ? saveError.message : "Failed to update subtask.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
+  async function handleMoveSubtask(subtask: MobileProjectSubtask, direction: "up" | "down") {
+    if (!task || !("subtasks" in task) || savingRef.current) return;
+    const nextSubtasks = reorderSubtasks(task.subtasks, subtask.id, direction);
+    if (!nextSubtasks) return;
+
+    const previousSubtasks = task.subtasks;
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
+    setBoard((current) =>
+      current
+        ? updateTaskInBoard(current, task.id, (taskToUpdate) =>
+            "subtasks" in taskToUpdate ? { ...taskToUpdate, subtasks: nextSubtasks } : taskToUpdate,
+          )
+        : current,
+    );
+
+    try {
+      await Promise.all(
+        nextSubtasks.map((candidate) => updateMobileProjectTask(task.project_id, candidate.id, { position: candidate.position })),
+      );
+    } catch (saveError) {
+      setBoard((current) =>
+        current
+          ? updateTaskInBoard(current, task.id, (taskToUpdate) =>
+              "subtasks" in taskToUpdate ? { ...taskToUpdate, subtasks: previousSubtasks } : taskToUpdate,
+            )
+          : current,
+      );
+      setError(saveError instanceof Error ? saveError.message : "Failed to reorder subtasks.");
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -380,6 +491,11 @@ export default function ProjectTaskDetailScreen() {
 
     try {
       await archiveMobileProjectTask(task.project_id, subtask.id);
+      setSubtaskEditDrafts((current) => {
+        const next = { ...current };
+        delete next[subtask.id];
+        return next;
+      });
     } catch (saveError) {
       setBoard((current) =>
         current
@@ -550,20 +666,57 @@ export default function ProjectTaskDetailScreen() {
                   <Text style={styles.label}>Subtasks</Text>
                   <View style={styles.listWrap}>
                     {task.subtasks.length ? (
-                      task.subtasks.map((subtask) => (
+                      task.subtasks.map((subtask, index) => {
+                        const subtaskTitle = subtaskEditDrafts[subtask.id] ?? subtask.title;
+                        const subtaskTitleChanged = subtaskTitle.trim() !== subtask.title;
+                        const href =
+                          `/project-task/${encodeURIComponent(subtask.id)}?projectId=${encodeURIComponent(subtask.project_id)}` as Href;
+
+                        return (
                         <View key={subtask.id} style={styles.subtaskRow}>
                           <View style={styles.subtaskHeader}>
+                            <View style={styles.subtaskTextWrap}>
+                              <TextInput
+                                accessibilityLabel="Subtask title"
+                                value={subtaskTitle}
+                                onChangeText={(value) => setSubtaskEditDrafts((current) => ({ ...current, [subtask.id]: value }))}
+                                placeholder="Subtask title"
+                                placeholderTextColor="#94a3b8"
+                                style={styles.subtaskTitleInput}
+                              />
+                              <Text style={styles.subtaskMeta}>{subtask.status}</Text>
+                            </View>
+                          </View>
+                          <View style={styles.subtaskActionRow}>
                             <Pressable
                               accessibilityRole="button"
-                              onPress={() => {
-                                const href =
-                                  `/project-task/${encodeURIComponent(subtask.id)}?projectId=${encodeURIComponent(subtask.project_id)}` as Href;
-                                router.push(href);
-                              }}
-                              style={styles.subtaskTextWrap}
+                              disabled={saving || !subtaskTitle.trim() || !subtaskTitleChanged}
+                              onPress={() => handleSubtaskTitleSave(subtask)}
+                              style={[
+                                styles.smallActionButton,
+                                (saving || !subtaskTitle.trim() || !subtaskTitleChanged) && styles.disabledChip,
+                              ]}
                             >
-                              <Text style={styles.subtaskTitle}>{subtask.title}</Text>
-                              <Text style={styles.subtaskMeta}>{subtask.status}</Text>
+                              <Text style={styles.smallActionButtonText}>Save</Text>
+                            </Pressable>
+                            <Pressable
+                              accessibilityRole="button"
+                              disabled={saving || index === 0}
+                              onPress={() => handleMoveSubtask(subtask, "up")}
+                              style={[styles.smallActionButton, (saving || index === 0) && styles.disabledChip]}
+                            >
+                              <Text style={styles.smallActionButtonText}>Up</Text>
+                            </Pressable>
+                            <Pressable
+                              accessibilityRole="button"
+                              disabled={saving || index === task.subtasks.length - 1}
+                              onPress={() => handleMoveSubtask(subtask, "down")}
+                              style={[styles.smallActionButton, (saving || index === task.subtasks.length - 1) && styles.disabledChip]}
+                            >
+                              <Text style={styles.smallActionButtonText}>Down</Text>
+                            </Pressable>
+                            <Pressable accessibilityRole="button" onPress={() => router.push(href)} style={styles.smallActionButton}>
+                              <Text style={styles.smallActionButtonText}>Open</Text>
                             </Pressable>
                             <Pressable
                               accessibilityRole="button"
@@ -588,7 +741,8 @@ export default function ProjectTaskDetailScreen() {
                             </Pressable>
                           </View>
                         </View>
-                      ))
+                        );
+                      })
                     ) : (
                       <Text style={styles.muted}>No subtasks</Text>
                     )}
@@ -860,9 +1014,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
+  subtaskActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+  },
   subtaskTextWrap: {
     flex: 1,
     minWidth: 0,
+  },
+  subtaskTitleInput: {
+    borderWidth: 1,
+    borderColor: "#dbe3ef",
+    borderRadius: 10,
+    backgroundColor: "#f8fafc",
+    color: "#111827",
+    fontSize: 15,
+    fontWeight: "700",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
   },
   subtaskTitle: {
     color: "#111827",

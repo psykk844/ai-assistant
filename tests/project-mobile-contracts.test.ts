@@ -199,6 +199,24 @@ describe("mobile project contracts", () => {
     expect(updatedParent?.subtasks.some((candidate) => candidate.id === subtask.id)).toBe(false);
   });
 
+  it("persists mock subtask title edits and orders subtasks by position", async () => {
+    const board = await getMobileProjectBoard();
+    const parent = board.tasks[0];
+    const firstSubtask = parent.subtasks[0];
+    const secondSubtask = await createMobileProjectSubtask(parent.project_id, parent.id, "Second subtask");
+
+    await updateMobileProjectTask(parent.project_id, firstSubtask.id, {
+      title: "Edited first subtask",
+      position: secondSubtask.position + 1000,
+    });
+    await updateMobileProjectTask(parent.project_id, secondSubtask.id, { position: 1000 });
+    const nextBoard = await getMobileProjectBoard(parent.project_id);
+    const updatedParent = nextBoard.tasks.find((candidate) => candidate.id === parent.id);
+
+    expect(updatedParent?.subtasks.map((subtask) => subtask.title)).toEqual(["Second subtask", "Edited first subtask"]);
+    expect(updatedParent?.subtasks.map((subtask) => subtask.position)).toEqual([1000, 3000]);
+  });
+
   it("uses backend checklist POST and DELETE routes for mobile checklist edits", async () => {
     process.env.EXPO_PUBLIC_USE_REAL_BACKEND = "true";
     process.env.EXPO_PUBLIC_BACKEND_BASE_URL = "http://backend.test";

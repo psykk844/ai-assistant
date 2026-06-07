@@ -28,6 +28,7 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
   const [dueDate, setDueDate] = useState("");
   const [checklistTitle, setChecklistTitle] = useState("");
   const [subtaskTitle, setSubtaskTitle] = useState("");
+  const [subtaskTitleDrafts, setSubtaskTitleDrafts] = useState<Record<string, string>>({});
   const [mutationMessage, setMutationMessage] = useState<{ tone: "error" | "info"; text: string } | null>(null);
   const [checklistOverrides, setChecklistOverrides] = useState<Record<string, boolean>>({});
   const [focusedTaskIds, setFocusedTaskIds] = useState<Set<string>>(() => new Set());
@@ -44,6 +45,7 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
     setDueDate(task?.due_date ?? "");
     setChecklistTitle("");
     setSubtaskTitle("");
+    setSubtaskTitleDrafts(Object.fromEntries((task?.subtasks ?? []).map((subtask) => [subtask.id, subtask.title])));
     if (taskChanged) {
       setMutationMessage(null);
       setFocusedTaskIds(new Set());
@@ -140,6 +142,46 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
     runMutation(() => createProjectTaskAction(formData), {
       onSuccess: () => setSubtaskTitle(""),
       failureMessage: "Could not add subtask. Please try again.",
+    });
+  }
+
+  function handleSubtaskTitleSave(subtask: ProjectTaskNode["subtasks"][number]) {
+    const nextTitle = (subtaskTitleDrafts[subtask.id] ?? subtask.title).trim();
+    if (!nextTitle) {
+      setMutationMessage({ tone: "error", text: "Subtask title is required." });
+      setSubtaskTitleDrafts((current) => ({ ...current, [subtask.id]: subtask.title }));
+      return;
+    }
+    if (nextTitle === subtask.title) return;
+
+    runMutation(() => updateProjectTaskAction(subtask.id, { title: nextTitle }), {
+      onFailure: () => setSubtaskTitleDrafts((current) => ({ ...current, [subtask.id]: subtask.title })),
+      failureMessage: "Could not update subtask. Please try again.",
+    });
+  }
+
+  function handleMoveSubtask(subtaskId: string, direction: "up" | "down") {
+    const currentIndex = currentTask.subtasks.findIndex((subtask) => subtask.id === subtaskId);
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= currentTask.subtasks.length) return;
+
+    const nextOrder = [...currentTask.subtasks];
+    const [moved] = nextOrder.splice(currentIndex, 1);
+    nextOrder.splice(targetIndex, 0, moved);
+
+    runMutation(
+      async () => {
+        await Promise.all(
+          nextOrder.map((subtask, index) => updateProjectTaskAction(subtask.id, { position: (index + 1) * 1000 })),
+        );
+      },
+      { failureMessage: "Could not reorder subtasks. Please try again." },
+    );
+  }
+
+  function handleArchiveSubtask(subtaskId: string) {
+    runMutation(() => archiveProjectTaskAction(subtaskId), {
+      failureMessage: "Could not remove subtask. Please try again.",
     });
   }
 
@@ -312,24 +354,77 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
               No subtasks.
             </p>
           ) : (
-            currentTask.subtasks.map((subtask) => (
+            currentTask.subtasks.map((subtask, index) => {
+              const draftTitle = subtaskTitleDrafts[subtask.id] ?? subtask.title;
+              const titleChanged = draftTitle.trim() !== subtask.title;
+
+              return (
               <div key={subtask.id} className="rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2">
-                <div className="flex items-start justify-between gap-3">
+                <div className="space-y-3">
                   <div>
-                    <p className="text-sm font-medium">{subtask.title}</p>
+                    <label className="sr-only" htmlFor={`subtask-title-${subtask.id}`}>
+                      Subtask title
+                    </label>
+                    <input
+                      id={`subtask-title-${subtask.id}`}
+                      value={draftTitle}
+                      onChange={(event) =>
+                        setSubtaskTitleDrafts((current) => ({ ...current, [subtask.id]: event.target.value }))
+                      }
+                      onBlur={() => {
+                        if (titleChanged) handleSubtaskTitleSave(subtask);
+                      }}
+                      className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1.5 text-sm font-medium outline-none focus:border-[var(--accent)]"
+                      disabled={isPending}
+                    />
                     <p className="mt-1 text-xs text-[var(--text-muted)]">{statusLabel(subtask.status)}</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleAddToToday(subtask.id)}
-                    className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
-                    disabled={isPending || subtask.status === "done" || focusedTaskIds.has(subtask.id)}
-                  >
-                    {focusedTaskIds.has(subtask.id) ? "Added" : isPending ? "Adding..." : "Today"}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSubtaskTitleSave(subtask)}
+                      className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
+                      disabled={isPending || !draftTitle.trim() || !titleChanged}
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveSubtask(subtask.id, "up")}
+                      className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
+                      disabled={isPending || index === 0}
+                    >
+                      Up
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveSubtask(subtask.id, "down")}
+                      className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
+                      disabled={isPending || index === currentTask.subtasks.length - 1}
+                    >
+                      Down
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddToToday(subtask.id)}
+                      className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
+                      disabled={isPending || subtask.status === "done" || focusedTaskIds.has(subtask.id)}
+                    >
+                      {focusedTaskIds.has(subtask.id) ? "Added" : isPending ? "Adding..." : "Today"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleArchiveSubtask(subtask.id)}
+                      className="rounded-md border border-red-500/50 px-2 py-1 text-xs text-red-300 transition hover:bg-red-500/10 disabled:opacity-60"
+                      disabled={isPending}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
 

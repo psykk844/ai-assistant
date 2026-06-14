@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { mergeChecklistTitleDrafts } from "@/lib/projects/checklist-drafts";
 import type { ProjectTaskNode } from "@/lib/projects/types";
 import { PROJECT_STATUS_ORDER, statusLabel, type ProjectTaskStatus } from "@/lib/projects/status";
 import {
@@ -35,6 +36,7 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
   const [checklistOverrides, setChecklistOverrides] = useState<Record<string, boolean>>({});
   const [focusedTaskIds, setFocusedTaskIds] = useState<Set<string>>(() => new Set());
   const previousTaskId = useRef<string | null>(null);
+  const dirtyChecklistTitleIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const nextTaskId = task?.id ?? null;
@@ -46,7 +48,19 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
     setStatus(task?.status ?? "todo");
     setDueDate(task?.due_date ?? "");
     setChecklistTitle("");
-    setChecklistTitleDrafts(Object.fromEntries((task?.checklist ?? []).map((item) => [item.id, item.title])));
+    if (taskChanged || !task) {
+      dirtyChecklistTitleIds.current.clear();
+    } else {
+      const currentChecklistIds = new Set(task.checklist.map((item) => item.id));
+      for (const itemId of dirtyChecklistTitleIds.current) {
+        if (!currentChecklistIds.has(itemId)) {
+          dirtyChecklistTitleIds.current.delete(itemId);
+        }
+      }
+    }
+    setChecklistTitleDrafts((current) =>
+      mergeChecklistTitleDrafts(task?.checklist ?? [], current, dirtyChecklistTitleIds.current),
+    );
     setSubtaskTitle("");
     setSubtaskTitleDrafts(Object.fromEntries((task?.subtasks ?? []).map((subtask) => [subtask.id, subtask.title])));
     if (taskChanged) {
@@ -152,13 +166,25 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
     const nextTitle = (checklistTitleDrafts[item.id] ?? item.title).trim();
     if (!nextTitle) {
       setMutationMessage({ tone: "error", text: "Checklist title is required." });
+      dirtyChecklistTitleIds.current.delete(item.id);
       setChecklistTitleDrafts((current) => ({ ...current, [item.id]: item.title }));
       return;
     }
-    if (nextTitle === item.title) return;
+    if (nextTitle === item.title) {
+      dirtyChecklistTitleIds.current.delete(item.id);
+      setChecklistTitleDrafts((current) => ({ ...current, [item.id]: item.title }));
+      return;
+    }
 
     runMutation(() => updateProjectChecklistItemAction(item.id, { title: nextTitle }), {
-      onFailure: () => setChecklistTitleDrafts((current) => ({ ...current, [item.id]: item.title })),
+      onSuccess: () => {
+        dirtyChecklistTitleIds.current.delete(item.id);
+        setChecklistTitleDrafts((current) => ({ ...current, [item.id]: nextTitle }));
+      },
+      onFailure: () => {
+        dirtyChecklistTitleIds.current.delete(item.id);
+        setChecklistTitleDrafts((current) => ({ ...current, [item.id]: item.title }));
+      },
       failureMessage: "Could not update checklist item. Please try again.",
     });
   }
@@ -183,6 +209,7 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
   }
 
   function handleRemoveChecklistItem(itemId: string) {
+    dirtyChecklistTitleIds.current.delete(itemId);
     runMutation(() => deleteProjectChecklistItemAction(itemId), {
       failureMessage: "Could not remove checklist item. Please try again.",
     });
@@ -369,9 +396,15 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
                     <input
                       id={`checklist-title-${item.id}`}
                       value={draftTitle}
-                      onChange={(event) =>
-                        setChecklistTitleDrafts((current) => ({ ...current, [item.id]: event.target.value }))
-                      }
+                      onChange={(event) => {
+                        const nextTitle = event.target.value;
+                        if (nextTitle.trim() === item.title) {
+                          dirtyChecklistTitleIds.current.delete(item.id);
+                        } else {
+                          dirtyChecklistTitleIds.current.add(item.id);
+                        }
+                        setChecklistTitleDrafts((current) => ({ ...current, [item.id]: nextTitle }));
+                      }}
                       onBlur={() => {
                         if (titleChanged) handleChecklistTitleSave(item);
                       }}

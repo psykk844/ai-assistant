@@ -17,11 +17,13 @@ import {
 
 type TaskDetailDrawerProps = {
   task: ProjectTaskNode | null;
+  parentTask?: ProjectTaskNode | null;
   projectId: string;
   onClose: () => void;
+  onOpenTask?: (taskId: string) => void;
 };
 
-export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerProps) {
+export function TaskDetailDrawer({ task, parentTask = null, projectId, onClose, onOpenTask }: TaskDetailDrawerProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [title, setTitle] = useState("");
@@ -88,6 +90,7 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
 
   if (!task) return null;
   const currentTask = task;
+  const isSubtask = Boolean(currentTask.parent_task_id);
 
   function resetEditableFields(source: ProjectTaskNode) {
     setTitle(source.title);
@@ -279,7 +282,9 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
     <aside className="fixed right-0 top-0 z-40 h-screen w-full max-w-md overflow-y-auto border-l border-[var(--border)] bg-[var(--bg-elevated)] p-5 text-[var(--text)] shadow-2xl">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">Task detail</p>
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">
+            {isSubtask ? "Subtask detail" : "Task detail"}
+          </p>
           <p
             className={`mt-2 min-h-5 text-xs ${
               mutationMessage?.tone === "error" ? "text-red-300" : "text-[var(--text-muted)]"
@@ -287,6 +292,15 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
           >
             {isPending ? "Saving..." : mutationMessage?.text ?? "Changes save on edit"}
           </p>
+          {parentTask && onOpenTask ? (
+            <button
+              type="button"
+              onClick={() => onOpenTask(parentTask.id)}
+              className="mt-1 text-left text-xs text-[var(--text-muted)] underline-offset-4 hover:text-[var(--text)] hover:underline"
+            >
+              Parent: {parentTask.title}
+            </button>
+          ) : null}
         </div>
         <button
           type="button"
@@ -472,6 +486,7 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
         </form>
       </section>
 
+      {!isSubtask ? (
       <section className="mt-6 border-t border-[var(--border)] pt-5">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold">Subtasks</h2>
@@ -536,6 +551,14 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
                     </button>
                     <button
                       type="button"
+                      onClick={() => onOpenTask?.(subtask.id)}
+                      className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
+                      disabled={isPending || !onOpenTask}
+                    >
+                      Open
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleAddToToday(subtask.id)}
                       className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-60"
                       disabled={isPending || subtask.status === "done" || focusedTaskIds.has(subtask.id)}
@@ -575,6 +598,7 @@ export function TaskDetailDrawer({ task, projectId, onClose }: TaskDetailDrawerP
           </button>
         </form>
       </section>
+      ) : null}
 
       <div className="mt-6 grid grid-cols-2 gap-3">
         <button

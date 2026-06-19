@@ -30,6 +30,7 @@ import {
   type ProjectTaskStatus,
 } from "@/lib/projects/status";
 import { positionForProjectDrop, type ProjectDropPlacement } from "./project-drop-position";
+import { findProjectTaskDetail } from "./project-task-selection";
 import { createProjectAction, createProjectTaskAction, moveProjectTaskAction, updateProjectArchiveAction } from "./server-actions";
 import { TaskDetailDrawer } from "./task-detail-drawer";
 
@@ -139,10 +140,7 @@ export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard
   const activeProjectId = activeProject?.id ?? null;
   const filteredTasks = useMemo(() => filterTasks(board.tasks, query), [board.tasks, query]);
   const grouped = useMemo(() => groupTopLevelTasksByStatus(filteredTasks), [filteredTasks]);
-  const selectedTask = useMemo(
-    () => board.tasks.find((task) => task.id === selectedTaskId) ?? null,
-    [board.tasks, selectedTaskId],
-  );
+  const selectedTaskDetail = useMemo(() => findProjectTaskDetail(board, selectedTaskId), [board, selectedTaskId]);
 
   useEffect(() => setBoard(initialBoard), [initialBoard]);
   useEffect(() => setSelectedTaskId(null), [activeProjectId]);
@@ -439,9 +437,11 @@ export function ProjectsBoardClient({ initialArchived, initialArea, initialBoard
         </div>
       </DndContext>
       <TaskDetailDrawer
-        task={selectedTask}
-        projectId={selectedTask?.project_id ?? activeProject?.id ?? ""}
+        task={selectedTaskDetail.task}
+        parentTask={selectedTaskDetail.parentTask}
+        projectId={selectedTaskDetail.task?.project_id ?? activeProject?.id ?? ""}
         onClose={() => setSelectedTaskId(null)}
+        onOpenTask={setSelectedTaskId}
       />
     </main>
   );

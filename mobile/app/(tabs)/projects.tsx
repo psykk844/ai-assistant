@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { ProjectTaskRow } from "../../components/ProjectTaskRow";
+import { filterMobileProjectTasks } from "../../lib/project-search";
 import {
   buildProjectTaskStatusPatch,
   createMobileProjectTask,
@@ -24,6 +25,7 @@ export default function ProjectsScreen() {
   const [selectedArchived, setSelectedArchived] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<MobileProjectTaskStatus>("todo");
+  const [search, setSearch] = useState("");
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -58,8 +60,9 @@ export default function ProjectsScreen() {
 
   const visibleTasks = useMemo(() => {
     if (!board) return [];
-    return board.tasks.filter((task) => task.status === selectedStatus);
-  }, [board, selectedStatus]);
+    const matchingTasks = filterMobileProjectTasks(board.tasks, search);
+    return search.trim() ? matchingTasks : matchingTasks.filter((task) => task.status === selectedStatus);
+  }, [board, search, selectedStatus]);
 
   async function handleProjectSelect(projectId: string) {
     setSelectedProjectId(projectId);
@@ -233,6 +236,19 @@ export default function ProjectsScreen() {
 
               {!selectedArchived ? (
                 <>
+                  <TextInput
+                    accessibilityLabel="Search project tasks"
+                    value={search}
+                    onChangeText={setSearch}
+                    placeholder="Search projects and tasks"
+                    placeholderTextColor="#94a3b8"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    clearButtonMode="while-editing"
+                    returnKeyType="search"
+                    style={styles.searchInput}
+                  />
+
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
                     {projectStatusTabs().map((status) => (
                       <Pressable
@@ -286,7 +302,7 @@ export default function ProjectsScreen() {
                     />
                   ))
                 ) : (
-                  <Text style={styles.muted}>No tasks in this status.</Text>
+                  <Text style={styles.muted}>{search.trim() ? "No matching project tasks." : "No tasks in this status."}</Text>
                 )}
                 </View>
               ) : null}
@@ -432,6 +448,16 @@ const styles = StyleSheet.create({
   },
   activeStatusTabText: {
     color: "#3730a3",
+  },
+  searchInput: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 15,
+    color: "#0f172a",
   },
   addRow: {
     flexDirection: "row",

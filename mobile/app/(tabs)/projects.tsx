@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { ProjectTaskRow } from "../../components/ProjectTaskRow";
 import { filterMobileProjectTasks } from "../../lib/project-search";
+import {
+  MOBILE_LAST_PROJECT_STORAGE_KEY,
+  resolveMobileStartupProjectId,
+  shouldRememberMobileProjectSelection,
+} from "../../lib/project-startup";
 import {
   buildProjectTaskStatusPatch,
   createMobileProjectTask,
@@ -19,6 +25,13 @@ import type {
   MobileProjectTaskStatus,
 } from "../../lib/projects-types";
 
+function rememberProject(projectId: string | null) {
+  const operation = projectId
+    ? AsyncStorage.setItem(MOBILE_LAST_PROJECT_STORAGE_KEY, projectId)
+    : AsyncStorage.removeItem(MOBILE_LAST_PROJECT_STORAGE_KEY);
+  void operation.catch(() => undefined);
+}
+
 export default function ProjectsScreen() {
   const [board, setBoard] = useState<MobileProjectBoardPayload | null>(null);
   const [selectedArea, setSelectedArea] = useState<MobileProjectAreaFilter>("all");
@@ -27,14 +40,34 @@ export default function ProjectsScreen() {
   const [selectedStatus, setSelectedStatus] = useState<MobileProjectTaskStatus>("todo");
   const [search, setSearch] = useState("");
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [rememberedProjectId, setRememberedProjectId] = useState<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [pendingTaskIds, setPendingTaskIds] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
   const pendingTaskIdsRef = useRef(new Set<string>());
   const addingTaskRef = useRef(false);
+  const startupSelectionResolvedRef = useRef(false);
+  const newTaskInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem(MOBILE_LAST_PROJECT_STORAGE_KEY)
+      .then((projectId) => {
+        if (active) setRememberedProjectId(projectId);
+      })
+      .catch(() => {
+        if (active) setRememberedProjectId(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (rememberedProjectId === undefined) return;
+    const startupRememberedProjectId = rememberedProjectId;
     let active = true;
 
     async function load() {
@@ -43,8 +76,22 @@ export default function ProjectsScreen() {
       try {
         const payload = await getMobileProjectBoard(selectedProjectId, selectedArea, selectedArchived);
         if (!active) return;
+        const isStartupSelection = !startupSelectionResolvedRef.current;
+        const nextProjectId = isStartupSelection
+          ? resolveMobileStartupProjectId(payload.projects, startupRememberedProjectId)
+          : resolveMobileProjectSelection(payload, selectedArea);
+        startupSelectionResolvedRef.current = true;
         setBoard(payload);
-        setSelectedProjectId(resolveMobileProjectSelection(payload, selectedArea));
+        setSelectedProjectId(nextProjectId);
+        if (
+          nextProjectId &&
+          shouldRememberMobileProjectSelection(selectedArchived) &&
+          (isStartupSelection || selectedArea !== "all")
+        ) {
+          rememberProject(nextProjectId);
+        } else if (isStartupSelection && startupRememberedProjectId && !nextProjectId) {
+          rememberProject(null);
+        }
       } catch (loadError) {
         if (active) setError(loadError instanceof Error ? loadError.message : "Failed to load projects.");
       } finally {
@@ -56,7 +103,13 @@ export default function ProjectsScreen() {
     return () => {
       active = false;
     };
-  }, [selectedArea, selectedArchived, selectedProjectId]);
+  }, [rememberedProjectId, selectedArea, selectedArchived, selectedProjectId]);
+
+  useEffect(() => {
+    if (!loading && board?.activeProject && !selectedArchived) {
+      newTaskInputRef.current?.focus();
+    }
+  }, [board?.activeProject, loading, selectedArchived]);
 
   const visibleTasks = useMemo(() => {
     if (!board) return [];
@@ -66,6 +119,7 @@ export default function ProjectsScreen() {
 
   async function handleProjectSelect(projectId: string) {
     setSelectedProjectId(projectId);
+    if (shouldRememberMobileProjectSelection(selectedArchived)) rememberProject(projectId);
   }
 
   function handleAreaSelect(area: MobileProjectAreaFilter) {
@@ -84,6 +138,7 @@ export default function ProjectsScreen() {
     setError(null);
     try {
       await updateMobileProjectArchive(board.activeProject.id, archived);
+      if (archived) rememberProject(null);
       const payload = await getMobileProjectBoard(null, selectedArea, selectedArchived);
       setBoard(payload);
       setSelectedProjectId(resolveMobileProjectSelection(payload, selectedArea));
@@ -266,6 +321,7 @@ export default function ProjectsScreen() {
 
                   <View style={styles.addRow}>
                     <TextInput
+                      ref={newTaskInputRef}
                       accessibilityLabel="New project task title"
                       value={newTaskTitle}
                       onChangeText={setNewTaskTitle}

@@ -6,6 +6,7 @@ const PROJECT_COLUMNS = "id,user_id,area,name,description,position,archived_at,c
 const TASK_COLUMNS = "id,project_id,parent_task_id,title,description,status,position,due_date,labels,archived_at,created_at,updated_at";
 const CHECKLIST_COLUMNS = "id,task_id,title,completed,position,created_at,updated_at";
 const FOCUS_COLUMNS = "id,user_id,project_task_id,lane,my_day_order,created_at,updated_at";
+const CHECKLIST_TASK_ID_BATCH_SIZE = 100;
 
 export function sanitizeProjectLabels(value: unknown): ProjectLabel[] {
   if (!Array.isArray(value)) return [];
@@ -161,15 +162,25 @@ export async function loadProjectBoard(
   }));
 
   const taskIds = tasks.map((task) => task.id);
-  const { data: checklistRows, error: checklistError } = taskIds.length
-    ? await supabase
+  const checklistResults = await Promise.all(
+    Array.from({ length: Math.ceil(taskIds.length / CHECKLIST_TASK_ID_BATCH_SIZE) }, (_, index) =>
+      supabase
         .from("project_checklist_items")
         .select(CHECKLIST_COLUMNS)
         .eq("user_id", userId)
-        .in("task_id", taskIds)
+        .in(
+          "task_id",
+          taskIds.slice(
+            index * CHECKLIST_TASK_ID_BATCH_SIZE,
+            (index + 1) * CHECKLIST_TASK_ID_BATCH_SIZE,
+          ),
+        )
         .order("position", { ascending: true })
-        .order("created_at", { ascending: true })
-    : { data: [], error: null };
+        .order("created_at", { ascending: true }),
+    ),
+  );
+  const checklistError = checklistResults.find((result) => result.error)?.error ?? null;
+  const checklistRows = checklistResults.flatMap((result) => result.data ?? []);
 
   if (checklistError) throw new Error(`Failed to load project checklist items: ${checklistError.message}`);
 

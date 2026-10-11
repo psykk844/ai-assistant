@@ -24,6 +24,7 @@ const mockState = vi.hoisted(() => ({
   updateProjectTask: vi.fn(),
   insertProjectFocus: vi.fn(),
   deleteProjectFocus: vi.fn(),
+  checklistTaskIdBatches: [] as number[],
   projects: [] as Project[],
   taskRows: [] as ProjectTask[],
   focusRows: [] as Array<{
@@ -71,6 +72,9 @@ vi.mock("@/lib/supabase/admin", () => ({
           return query;
         },
         in(column: string, value: unknown[]) {
+          if (table === "project_checklist_items" && column === "task_id") {
+            mockState.checklistTaskIdBatches.push(value.length);
+          }
           filters.push({ column, value, op: "in" });
           return query;
         },
@@ -207,6 +211,7 @@ describe("project repository helpers", () => {
     mockState.updateProjectTask.mockClear();
     mockState.insertProjectFocus.mockClear();
     mockState.deleteProjectFocus.mockClear();
+    mockState.checklistTaskIdBatches = [];
     mockState.projects = [
       {
         id: "project-1",
@@ -335,6 +340,27 @@ describe("project repository helpers", () => {
       { id: "task-demand", project: { id: "demand-project", area: "demand", name: "Demand" } },
       { id: "task-personal", project: { id: "personal-project", area: "personal", name: "Personal" } },
     ]);
+  });
+
+  it("batches checklist reads for large project boards", async () => {
+    mockState.taskRows = Array.from({ length: 205 }, (_, index) => ({
+      id: `task-${index + 1}`,
+      project_id: "project-1",
+      parent_task_id: null,
+      title: `Task ${index + 1}`,
+      description: null,
+      status: "todo" as const,
+      position: (index + 1) * 1000,
+      due_date: null,
+      labels: [],
+      archived_at: null,
+      created_at: "2026-05-30T00:00:00Z",
+      updated_at: "2026-05-30T00:00:00Z",
+    }));
+
+    await loadProjectBoard("user-1", null, null);
+
+    expect(mockState.checklistTaskIdBatches).toEqual([100, 100, 5]);
   });
 
   it("adds project metadata to subtasks when project rows are supplied", () => {
